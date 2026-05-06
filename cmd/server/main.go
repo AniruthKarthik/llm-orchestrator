@@ -1,3 +1,15 @@
+// cmd/server/main.go — entry point for the LLM Orchestrator.
+//
+// Wiring order (bottom-up):
+//  1. Shared store
+//  2. LLM client
+//  3. Planner  (depends on LLM client)
+//  4. Task queue
+//  5. Tool registry
+//  6. Executor (depends on store, queue, tools)
+//  7. Worker pool (depends on queue, executor)
+//  8. API handler (depends on store, planner, queue)
+//  9. HTTP server
 package main
 
 import (
@@ -17,32 +29,27 @@ import (
 	"github.com/AniruthKarthik/llm-orchestrator/internal/queue"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/store"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/tools"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/worker"
 )
 
 func main() {
 	addr := envOrDefault("SERVER_ADDR", ":8080")
-
-	// Dependencies
-	st := store.New()
-	q := queue.New(100)
+	workerCount := 4
+	memStore := store.New()
 	llmClient := llm.NewMockClient()
-
 	p := planner.New(llmClient)
-
-	// Tools registry
-	registry := []tools.Tool{
+	taskQueue := queue.New(0)
+	toolRegistry := []tools.Tool{
 		tools.NewSearchTool(),
 		tools.NewFetchTool(),
 		tools.NewSummarizeTool(llmClient),
 		tools.NewReportTool(),
 	}
-
-	exec := executor.New(st, q, registry)
-
-	h := api.NewHandler(st, q, p)
-
+	exec := executor.New(memStore, taskQueue, toolRegistry)
+	pool := worker.NewPool(workerCount, taskQueue, exec)
+	pool.Start(context.Background())
+	h := api.NewHandler(memStore, p, taskQueue)
 	router := api.NewRouter(h)
-
 	srv := &http.Server{
 		Addr:         addr,
 		Handler:      router,
@@ -51,17 +58,11 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Start Executor worker loop
-	go exec.Start(ctx)
-
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		log.Printf("[server] listening on %s", addr)
+		log.Printf("[server] listening on %s (%d workers)", addr, workerCount)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("[server] ListenAndServe: %v", err)
 		}
@@ -69,14 +70,14 @@ func main() {
 
 	<-stop
 	log.Println("[server] shutdown signal received")
-	cancel() // Stop executor loop
 
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer shutdownCancel()
-
-	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Fatalf("[server] graceful shutdown failed: %v", err)
+	shutCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(shutCtx); err != nil {
+		log.Printf("[server] HTTP shutdown error: %v", err)
 	}
+
+	pool.Stop()
 
 	log.Println("[server] stopped cleanly")
 }

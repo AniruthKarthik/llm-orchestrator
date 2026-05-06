@@ -19,16 +19,12 @@ import (
 
 type Handler struct {
 	store   store.Store
-	queue   queue.Queue
 	planner *planner.Planner
+	queue   queue.Queue
 }
 
-func NewHandler(s store.Store, q queue.Queue, p *planner.Planner) *Handler {
-	return &Handler{
-		store:   s,
-		queue:   q,
-		planner: p,
-	}
+func NewHandler(s store.Store, p *planner.Planner, q queue.Queue) *Handler {
+	return &Handler{store: s, planner: p, queue: q}
 }
 
 type createJobRequest struct {
@@ -64,51 +60,53 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt: now,
 	}
 	if err := h.store.SaveJob(job); err != nil {
-		utils.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save job: %v", err))
+		utils.WriteError(w, http.StatusInternalServerError, "failed to save job")
 		return
 	}
 
 	log.Printf("[handler] created job %s for goal: %q", jobID, req.Goal)
 
-	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	planCtx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
 
-	tasks, err := h.planner.Plan(ctx, req.Goal)
+	tasks, err := h.planner.Plan(planCtx, req.Goal)
 	if err != nil {
 		log.Printf("[handler] planning failed for job %s: %v", jobID, err)
-		if err := h.store.SetJobError(jobID, fmt.Sprintf("planning failed: %v", err)); err != nil {
-			log.Printf("[handler] failed to update job status: %v", err)
-		}
-		utils.WriteJSON(w, http.StatusAccepted, createJobResponse{ID: jobID, Status: string(models.JobStatusFailed)})
+		_ = h.store.SetJobError(jobID, fmt.Sprintf("planning failed: %v", err))
+		utils.WriteJSON(w, http.StatusAccepted, createJobResponse{
+			ID:     jobID,
+			Status: string(models.JobStatusFailed),
+		})
 		return
 	}
 
-	// Set JobID for each task and update job in store
 	for i := range tasks {
 		tasks[i].JobID = jobID
 	}
 
-	if err := h.store.UpdateJobStatus(jobID, models.JobStatusQueued); err != nil {
-		log.Printf("[handler] failed to update job status: %v", err)
+	job.Tasks = tasks
+	job.Status = models.JobStatusQueued
+	job.UpdatedAt = time.Now().UTC()
+	if err := h.store.SaveJob(job); err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, "failed to persist tasks")
+		return
 	}
 
-	// Update tasks in job
-	if err := h.store.UpdateJobTasks(jobID, tasks); err != nil {
-		log.Printf("[handler] failed to update job tasks: %v", err)
-	}
-
-	// Enqueue tasks
-	for _, task := range tasks {
-		if err := h.queue.Enqueue(task); err != nil {
-			log.Printf("[handler] failed to enqueue task %s: %v", task.ID, err)
+	for _, t := range tasks {
+		if err := h.queue.Enqueue(t); err != nil {
+			log.Printf("[handler] enqueue failed for task %s: %v", t.ID, err)
 		}
 	}
 
-	utils.WriteJSON(w, http.StatusAccepted, createJobResponse{ID: jobID, Status: string(models.JobStatusQueued)})
+	log.Printf("[handler] job %s queued with %d tasks", jobID, len(tasks))
+	utils.WriteJSON(w, http.StatusAccepted, createJobResponse{
+		ID:     jobID,
+		Status: string(models.JobStatusQueued),
+	})
 }
 
 func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+	id := jobIDFromPath(r.URL.Path)
 	if id == "" {
 		utils.WriteError(w, http.StatusBadRequest, "missing job id in path")
 		return
@@ -124,7 +122,8 @@ func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetJobResult(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
+	path := strings.TrimSuffix(r.URL.Path, "/result")
+	id := jobIDFromPath(path)
 	if id == "" {
 		utils.WriteError(w, http.StatusBadRequest, "missing job id in path")
 		return
@@ -153,16 +152,19 @@ func (h *Handler) GetJobResult(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ---- helpers ----------------------------------------------------------------
+func jobIDFromPath(path string) string {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) < 2 {
+		return ""
+	}
+	return parts[len(parts)-1]
+}
 
-// newID generates a cryptographically random 16-byte hex string used as a Job
-// ID.  Using crypto/rand avoids the need for an external UUID library.
 func newID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
 		panic(fmt.Sprintf("newID: crypto/rand failed: %v", err))
 	}
-	// Format as UUID-like string: 8-4-4-4-12
 	h := hex.EncodeToString(b)
 	return fmt.Sprintf("%s-%s-%s-%s-%s", h[0:8], h[8:12], h[12:16], h[16:20], h[20:32])
 }
