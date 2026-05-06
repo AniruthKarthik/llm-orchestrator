@@ -5,12 +5,13 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/AniruthKarthik/llm-orchestrator/internal/models"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/observability"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/orchestrator"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/planner"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/queue"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/store"
@@ -18,14 +19,21 @@ import (
 )
 
 type Handler struct {
-	store   store.Store
-	planner *planner.Planner
-	queue   queue.Queue
+	store store.Store
+	plan  *planner.Planner
+	queue queue.Queue
+	orch  *orchestrator.Orchestrator
+	obs   *observability.Obs
 }
 
-// NewHandler initializes the API handler with its required dependencies.
-func NewHandler(s store.Store, p *planner.Planner, q queue.Queue) *Handler {
-	return &Handler{store: s, planner: p, queue: q}
+func NewHandler(
+	s store.Store,
+	p *planner.Planner,
+	q queue.Queue,
+	orch *orchestrator.Orchestrator,
+	obs *observability.Obs,
+) *Handler {
+	return &Handler{store: s, plan: p, queue: q, orch: orch, obs: obs}
 }
 
 type createJobRequest struct {
@@ -33,18 +41,20 @@ type createJobRequest struct {
 }
 
 type createJobResponse struct {
-	ID     string `json:"id"`
-	Status string `json:"status"`
+	ID      string `json:"id"`
+	Status  string `json:"status"`
+	TraceID string `json:"trace_id,omitempty"`
 }
 
-// CreateJob parses a goal from the user and triggers the planning and queuing of a new job.
 func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
+	ctx, span := h.obs.Tracer.Start(r.Context(), "api.CreateJob")
+	defer span.End(ctx)
+
 	var req createJobRequest
 	if err := utils.DecodeJSON(r, &req); err != nil {
 		utils.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-
 	req.Goal = strings.TrimSpace(req.Goal)
 	if req.Goal == "" {
 		utils.WriteError(w, http.StatusBadRequest, "'goal' must not be empty")
@@ -52,6 +62,9 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jobID := newID()
+	ctx = observability.WithJobID(ctx, jobID)
+	h.obs.Log.Info(ctx, "api: creating job", observability.F("goal", req.Goal))
+
 	now := time.Now().UTC()
 	job := &models.Job{
 		ID:        jobID,
@@ -62,22 +75,23 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt: now,
 	}
 	if err := h.store.SaveJob(job); err != nil {
+		span.SetError(err)
 		utils.WriteError(w, http.StatusInternalServerError, "failed to save job")
 		return
 	}
 
-	log.Printf("[handler] created job %s for goal: %q", jobID, req.Goal)
-
-	planCtx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	planCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	tasks, err := h.planner.Plan(planCtx, req.Goal)
+	tasks, err := h.plan.Plan(planCtx, req.Goal)
 	if err != nil {
-		log.Printf("[handler] planning failed for job %s: %v", jobID, err)
+		h.obs.Log.Error(ctx, "api: planning failed", observability.F("err", err.Error()))
+		span.SetError(err)
 		_ = h.store.SetJobError(jobID, fmt.Sprintf("planning failed: %v", err))
 		utils.WriteJSON(w, http.StatusAccepted, createJobResponse{
-			ID:     jobID,
-			Status: string(models.JobStatusFailed),
+			ID:      jobID,
+			Status:  string(models.JobStatusFailed),
+			TraceID: span.TraceID(),
 		})
 		return
 	}
@@ -85,7 +99,6 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	for i := range tasks {
 		tasks[i].JobID = jobID
 	}
-
 	job.Tasks = tasks
 	job.Status = models.JobStatusQueued
 	job.UpdatedAt = time.Now().UTC()
@@ -94,52 +107,68 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	for _, t := range tasks {
-		if err := h.queue.Enqueue(t); err != nil {
-			log.Printf("[handler] enqueue failed for task %s: %v", t.ID, err)
-		}
-	}
+	h.orch.TrackJob(jobID)
+	h.orch.Publish(orchestrator.Event{
+		Type:  orchestrator.EventJobQueued,
+		JobID: jobID,
+	})
 
-	log.Printf("[handler] job %s queued with %d tasks", jobID, len(tasks))
+	h.obs.Log.Info(ctx, "api: job queued",
+		observability.F("task_count", len(tasks)),
+		observability.F("trace_id", span.TraceID()),
+	)
+
 	utils.WriteJSON(w, http.StatusAccepted, createJobResponse{
-		ID:     jobID,
-		Status: string(models.JobStatusQueued),
+		ID:      jobID,
+		Status:  string(models.JobStatusQueued),
+		TraceID: span.TraceID(),
 	})
 }
 
-// GetJob retrieves the current state of a job including all its tasks.
 func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
+	ctx, span := h.obs.Tracer.Start(r.Context(), "api.GetJob")
+	defer span.End(ctx)
+
 	id := jobIDFromPath(r.URL.Path)
 	if id == "" {
 		utils.WriteError(w, http.StatusBadRequest, "missing job id in path")
 		return
 	}
+	ctx = observability.WithJobID(ctx, id)
 
 	job, err := h.store.GetJob(id)
 	if err != nil {
+		span.SetError(err)
 		utils.WriteError(w, http.StatusNotFound, fmt.Sprintf("job %q not found", id))
 		return
 	}
 
+	h.obs.Log.Info(ctx, "api: get job", observability.F("status", string(job.Status)))
 	utils.WriteJSON(w, http.StatusOK, job)
 }
 
-// GetJobResult returns the final aggregated outcome of a completed job.
 func (h *Handler) GetJobResult(w http.ResponseWriter, r *http.Request) {
+	ctx, span := h.obs.Tracer.Start(r.Context(), "api.GetJobResult")
+	defer span.End(ctx)
+
 	path := strings.TrimSuffix(r.URL.Path, "/result")
 	id := jobIDFromPath(path)
 	if id == "" {
 		utils.WriteError(w, http.StatusBadRequest, "missing job id in path")
 		return
 	}
+	ctx = observability.WithJobID(ctx, id)
 
 	job, err := h.store.GetJob(id)
 	if err != nil {
+		span.SetError(err)
 		utils.WriteError(w, http.StatusNotFound, fmt.Sprintf("job %q not found", id))
 		return
 	}
 
 	if job.Status != models.JobStatusCompleted {
+		h.obs.Log.Info(ctx, "api: result not yet available",
+			observability.F("status", string(job.Status)))
 		utils.WriteJSON(w, http.StatusAccepted, map[string]any{
 			"id":     job.ID,
 			"status": job.Status,
@@ -156,7 +185,11 @@ func (h *Handler) GetJobResult(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// jobIDFromPath extracts the UUID-like job identifier from a URL path.
+func (h *Handler) GetMetrics(w http.ResponseWriter, r *http.Request) {
+	snapshot := h.obs.Metrics.Snapshot()
+	utils.WriteJSON(w, http.StatusOK, snapshot)
+}
+
 func jobIDFromPath(path string) string {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) < 2 {
@@ -165,7 +198,6 @@ func jobIDFromPath(path string) string {
 	return parts[len(parts)-1]
 }
 
-// newID generates a cryptographically random UUID-formatted string.
 func newID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {

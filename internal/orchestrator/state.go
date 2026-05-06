@@ -20,7 +20,7 @@ type Event struct {
 
 type ReadyTask struct {
 	Task  models.Task
-	JobId string
+	JobID string
 }
 
 type jobPhase int

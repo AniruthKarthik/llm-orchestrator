@@ -1,32 +1,50 @@
 package api
 
 import (
-	"log"
 	"net/http"
+	"strings"
 	"time"
+
+	"github.com/AniruthKarthik/llm-orchestrator/internal/observability"
 )
 
-// NewRouter sets up the HTTP routes and applies global logging middleware.
 func NewRouter(h *Handler) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("POST /job", h.CreateJob)
-	mux.HandleFunc("GET /job/{id}", h.GetJob)
-	mux.HandleFunc("GET /job/{id}/result", h.GetJobResult)
+	mux.HandleFunc("GET /job/", func(w http.ResponseWriter, r *http.Request) {
+		rest := strings.TrimPrefix(r.URL.Path, "/job/")
+		switch {
+		case strings.HasSuffix(rest, "/result"):
+			h.GetJobResult(w, r)
+		default:
+			h.GetJob(w, r)
+		}
+	})
+	mux.HandleFunc("GET /metrics", h.GetMetrics)
 
-	return loggingMiddleware(mux)
+	return loggingMiddleware(mux, h.obs)
 }
 
-// loggingMiddleware wraps a handler to log details about every HTTP request.
-func loggingMiddleware(next http.Handler) http.Handler {
+func loggingMiddleware(next http.Handler, obs *observability.Obs) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		rw := &responseWriter{
-			ResponseWriter: w, status: http.StatusOK,
-		}
 
+		ctx, span := obs.Tracer.Start(r.Context(), "http.request")
+		r = r.WithContext(ctx)
+
+		rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rw, r)
-		log.Printf("[http] %s %s -> %d (%s)", r.Method, r.URL.Path, rw.status, time.Since(start))
+
+		elapsed := time.Since(start)
+		obs.Log.Info(ctx, "http request",
+			observability.F("method", r.Method),
+			observability.F("path", r.URL.Path),
+			observability.F("status", rw.status),
+			observability.F("duration_ms", elapsed.Milliseconds()),
+			observability.F("trace_id", span.TraceID()),
+		)
+		span.End(ctx)
 	})
 }
 
@@ -35,7 +53,6 @@ type responseWriter struct {
 	status int
 }
 
-// WriteHeader captures the status code before sending it to the client.
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.status = code
 	rw.ResponseWriter.WriteHeader(code)

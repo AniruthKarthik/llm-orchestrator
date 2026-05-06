@@ -3,10 +3,12 @@ package executor
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 
+	"github.com/AniruthKarthik/llm-orchestrator/internal/memory"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/models"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/observability"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/orchestrator"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/queue"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/store"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/tools"
@@ -19,122 +21,161 @@ const (
 )
 
 type Executor struct {
-	store store.Store
-	queue queue.Queue
-	tools map[string]tools.Tool
+	store     store.Store
+	queue     queue.Queue
+	tools     map[string]tools.Tool
+	retriever *memory.Retriever
+	orch      *orchestrator.Orchestrator
+	obs       *observability.Obs
 }
 
-// New creates a new Executor with the necessary store, queue, and tool registry.
-func New(s store.Store, q queue.Queue, registry []tools.Tool) *Executor {
+func New(
+	s store.Store,
+	q queue.Queue,
+	registry []tools.Tool,
+	retriever *memory.Retriever,
+	obs *observability.Obs,
+) *Executor {
 	toolMap := make(map[string]tools.Tool, len(registry))
 	for _, t := range registry {
 		toolMap[t.Name()] = t
 	}
-	return &Executor{store: s, queue: q, tools: toolMap}
-}
-
-// Start runs a continuous loop that dequeues and processes tasks from the queue.
-func (e *Executor) Start(ctx context.Context) {
-	log.Println("[executor] starting worker loop")
-	for {
-		task, ok := e.queue.Dequeue()
-		if !ok {
-			log.Println("[executor] queue closed, stopping worker loop")
-			return
-		}
-
-		// Check context before starting task
-		select {
-		case <-ctx.Done():
-			log.Println("[executor] context cancelled, stopping worker loop")
-			return
-		default:
-		}
-
-		go e.Run(ctx, task)
+	return &Executor{
+		store:     s,
+		queue:     q,
+		tools:     toolMap,
+		retriever: retriever,
+		obs:       obs,
 	}
 }
 
-// Run handles the complete lifecycle of a single task, from dependency checks to execution.
-func (e *Executor) Run(ctx context.Context, task models.Task) {
-	log.Printf("[executor] received task %s (job %s, type %s)", task.ID, task.JobID, task.Type)
+func (e *Executor) SetOrchestrator(o *orchestrator.Orchestrator) {
+	e.orch = o
+}
 
+// Run processes one task.  Called by each worker in a tight loop.
+func (e *Executor) Run(ctx context.Context, task models.Task) {
+	spanCtx, span := e.obs.Tracer.Start(ctx, "executor.Run")
+	defer span.End(spanCtx)
+
+	e.obs.Log.Info(spanCtx, "executor received task",
+		observability.F("task_type", task.Type),
+		observability.F("task_retries", task.Retries),
+	)
+
+	// ── 1. Idempotency guard ─────────────────────────────────────────────────
 	current, err := e.store.GetTask(task.JobID, task.ID)
 	if err != nil {
-		log.Printf("[executor] cannot fetch task %s: %v — skipping", task.ID, err)
+		e.obs.Log.Error(spanCtx, "executor: cannot fetch task", observability.F("err", err.Error()))
 		return
 	}
 	switch current.Status {
 	case models.TaskStatusCompleted:
-		log.Printf("[executor] task %s already completed — skipping (idempotent)", task.ID)
+		e.obs.Log.Info(spanCtx, "executor: task already completed — skipping (idempotent)")
 		return
 	case models.TaskStatusFailed:
-		log.Printf("[executor] task %s already failed — skipping", task.ID)
+		e.obs.Log.Info(spanCtx, "executor: task already failed — skipping")
 		return
 	case models.TaskStatusRunning:
-		log.Printf("[executor] task %s already running — dropping duplicate", task.ID)
+		e.obs.Log.Info(spanCtx, "executor: task already running — dropping duplicate")
 		return
 	}
 
-	depState, err := e.checkDeps(task.JobID, task.ID)
+	// ── 2. Dependency check ──────────────────────────────────────────────────
+	ds, err := e.checkDeps(task.JobID, task.ID)
 	if err != nil {
-		log.Printf("[executor] dep check failed for task %s: %v — requeuing", task.ID, err)
+		e.obs.Log.Error(spanCtx, "executor: dep check failed — requeuing", observability.F("err", err.Error()))
+		span.SetError(err)
 		e.requeueWithBackoff(task, 200*time.Millisecond)
 		return
 	}
-	switch depState {
+	switch ds {
 	case depStateFailed:
-		log.Printf("[executor] task %s has a failed dependency — marking failed", task.ID)
-		e.failTask(task, "upstream dependency failed")
-		e.checkJobCompletion(task.JobID)
+		e.obs.Log.Warn(spanCtx, "executor: task has a failed dependency — cascade failing")
+		e.failTask(spanCtx, task, "upstream dependency failed")
+		e.publishEvent(orchestrator.EventTaskFailed, task.JobID, task.ID)
 		return
 	case depStateWaiting:
-		log.Printf("[executor] task %s waiting for dependencies — requeuing", task.ID)
-		if err := e.store.UpdateTaskStatus(task.JobID, task.ID, models.TaskStatusWaiting); err != nil {
-			log.Printf("[executor] cannot set waiting status for task %s: %v", task.ID, err)
-		}
+		e.obs.Log.Info(spanCtx, "executor: task waiting for dependencies — requeuing")
+		_ = e.store.UpdateTaskStatus(task.JobID, task.ID, models.TaskStatusWaiting)
 		e.requeueWithBackoff(task, 300*time.Millisecond)
 		return
 	}
 
+	// ── 3. Mark running ──────────────────────────────────────────────────────
 	if err := e.store.UpdateTaskStatus(task.JobID, task.ID, models.TaskStatusRunning); err != nil {
-		log.Printf("[executor] cannot mark task %s running: %v", task.ID, err)
+		e.obs.Log.Error(spanCtx, "executor: cannot mark running", observability.F("err", err.Error()))
 		return
 	}
 
+	// ── 4. Fetch job + memory context ────────────────────────────────────────
 	job, err := e.store.GetJob(task.JobID)
 	if err != nil {
-		log.Printf("[executor] cannot fetch job %s: %v", task.JobID, err)
-		e.failTask(task, fmt.Sprintf("job lookup failed: %v", err))
-		e.checkJobCompletion(task.JobID)
+		e.obs.Log.Error(spanCtx, "executor: job lookup failed", observability.F("err", err.Error()))
+		e.failTask(spanCtx, task, fmt.Sprintf("job lookup failed: %v", err))
+		e.publishEvent(orchestrator.EventTaskFailed, task.JobID, task.ID)
 		return
 	}
 
+	memContext, err := e.retriever.RetrieveContext(spanCtx, job.Goal+" "+task.Type)
+	if err != nil {
+		// Memory retrieval is best-effort; log and continue.
+		e.obs.Log.Warn(spanCtx, "executor: memory retrieval failed",
+			observability.F("err", err.Error()))
+		memContext = ""
+	} else if memContext != "" {
+		e.obs.Log.Debug(spanCtx, "executor: retrieved memory context",
+			observability.F("context_len", len(memContext)))
+	}
+
+	// ── 5. Tool lookup ───────────────────────────────────────────────────────
 	tool, err := e.resolveTool(task.Type)
 	if err != nil {
-		log.Printf("[executor] %v", err)
-		e.failTask(task, err.Error())
-		e.checkJobCompletion(task.JobID)
+		e.obs.Log.Error(spanCtx, "executor: tool not found", observability.F("err", err.Error()))
+		span.SetError(err)
+		e.failTask(spanCtx, task, err.Error())
+		e.publishEvent(orchestrator.EventTaskFailed, task.JobID, task.ID)
 		return
 	}
 
-	result, execErr := e.executeWithRetry(ctx, task, job, tool)
+	// ── 6. Execute with retries ──────────────────────────────────────────────
+	start := time.Now()
+	result, execErr := e.executeWithRetry(spanCtx, task, job, tool, memContext)
+	elapsed := time.Since(start)
+
 	if execErr != nil {
-		log.Printf("[executor] task %s exhausted retries: %v", task.ID, execErr)
-		e.failTask(task, execErr.Error())
-		e.checkJobCompletion(task.JobID)
+		e.obs.Log.Error(spanCtx, "executor: task exhausted retries",
+			observability.F("err", execErr.Error()),
+			observability.F("duration_ms", elapsed.Milliseconds()),
+		)
+		span.SetError(execErr)
+		e.obs.Metrics.RecordTaskDuration(spanCtx, task.Type, elapsed, false)
+		e.failTask(spanCtx, task, execErr.Error())
+		e.publishEvent(orchestrator.EventTaskFailed, task.JobID, task.ID)
 		return
 	}
 
+	e.obs.Metrics.RecordTaskDuration(spanCtx, task.Type, elapsed, true)
+
+	// ── 7. Persist result ────────────────────────────────────────────────────
 	if err := e.store.SetTaskResult(task.JobID, task.ID, result); err != nil {
-		log.Printf("[executor] cannot store result for task %s: %v", task.ID, err)
-		e.failTask(task, fmt.Sprintf("store error: %v", err))
-		e.checkJobCompletion(task.JobID)
+		e.obs.Log.Error(spanCtx, "executor: cannot store result", observability.F("err", err.Error()))
+		span.SetError(err)
+		e.failTask(spanCtx, task, fmt.Sprintf("store error: %v", err))
+		e.publishEvent(orchestrator.EventTaskFailed, task.JobID, task.ID)
 		return
 	}
 
-	log.Printf("[executor] task %s completed successfully", task.ID)
-	e.checkJobCompletion(task.JobID)
+	// ── 8. Store result in memory ────────────────────────────────────────────
+	if err := e.retriever.StoreTaskResult(spanCtx, task.JobID, task.ID, task.Type, result); err != nil {
+		e.obs.Log.Warn(spanCtx, "executor: could not store result in memory",
+			observability.F("err", err.Error()))
+	}
+
+	e.obs.Log.Info(spanCtx, "executor: task completed",
+		observability.F("duration_ms", elapsed.Milliseconds()),
+	)
+	e.publishEvent(orchestrator.EventTaskCompleted, task.JobID, task.ID)
 }
 
 type depState int
@@ -145,7 +186,6 @@ const (
 	depStateFailed
 )
 
-// checkDeps determines if all upstream tasks have been completed successfully.
 func (e *Executor) checkDeps(jobID, taskID string) (depState, error) {
 	task, err := e.store.GetTask(jobID, taskID)
 	if err != nil {
@@ -167,17 +207,17 @@ func (e *Executor) checkDeps(jobID, taskID string) (depState, error) {
 	return depStateReady, nil
 }
 
-// executeWithRetry runs a tool with a specific input, retrying on failure up to maxTaskRetries.
 func (e *Executor) executeWithRetry(
 	ctx context.Context,
 	task models.Task,
 	job *models.Job,
 	tool tools.Tool,
+	memContext string,
 ) (map[string]any, error) {
 
-	input := buildInput(task, job)
-
+	input := buildInput(task, job, memContext)
 	var lastErr error
+
 	for attempt := 1; attempt <= maxTaskRetries; attempt++ {
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("context cancelled: %w", ctx.Err())
@@ -192,11 +232,16 @@ func (e *Executor) executeWithRetry(
 		}
 
 		lastErr = err
-		log.Printf("[executor] task %s attempt %d/%d failed: %v",
-			task.ID, attempt, maxTaskRetries, err)
+		e.obs.Log.Warn(ctx, "executor: tool attempt failed",
+			observability.F("attempt", attempt),
+			observability.F("max_attempts", maxTaskRetries),
+			observability.F("err", err.Error()),
+		)
+		e.obs.Metrics.IncTaskRetry(ctx, task.Type)
 
 		if incrErr := e.store.IncrTaskRetries(task.JobID, task.ID); incrErr != nil {
-			log.Printf("[executor] cannot increment retries for task %s: %v", task.ID, incrErr)
+			e.obs.Log.Warn(ctx, "executor: cannot increment retries",
+				observability.F("err", incrErr.Error()))
 		}
 
 		if attempt < maxTaskRetries {
@@ -212,7 +257,6 @@ func (e *Executor) executeWithRetry(
 	return nil, fmt.Errorf("all %d attempts failed, last: %w", maxTaskRetries, lastErr)
 }
 
-// resolveTool maps a task type string to its corresponding tool implementation.
 func (e *Executor) resolveTool(taskType string) (tools.Tool, error) {
 	if t, ok := e.tools[taskType]; ok {
 		return t, nil
@@ -232,52 +276,24 @@ func (e *Executor) resolveTool(taskType string) (tools.Tool, error) {
 	return nil, fmt.Errorf("no tool registered for task type %q", taskType)
 }
 
-// failTask marks a task as failed in the store and logs the reason.
-func (e *Executor) failTask(task models.Task, reason string) {
+func (e *Executor) failTask(ctx context.Context, task models.Task, reason string) {
 	if err := e.store.UpdateTaskStatus(task.JobID, task.ID, models.TaskStatusFailed); err != nil {
-		log.Printf("[executor] cannot mark task %s failed: %v", task.ID, err)
+		e.obs.Log.Error(ctx, "executor: cannot mark task failed", observability.F("err", err.Error()))
 	}
-	log.Printf("[executor] task %s marked failed: %s", task.ID, reason)
+	e.obs.Log.Warn(ctx, "executor: task marked failed", observability.F("reason", reason))
 }
 
-// checkJobCompletion examines all tasks in a job and updates the job's final status if finished.
-func (e *Executor) checkJobCompletion(jobID string) {
-	done, err := e.store.AllTasksDone(jobID)
-	if err != nil {
-		log.Printf("[executor] AllTasksDone check failed for job %s: %v", jobID, err)
+func (e *Executor) publishEvent(evtType orchestrator.EventType, jobID, taskID string) {
+	if e.orch == nil {
 		return
 	}
-	if !done {
-		return
-	}
-
-	anyFailed, err := e.store.AnyTaskFailed(jobID)
-	if err != nil {
-		log.Printf("[executor] AnyTaskFailed check failed for job %s: %v", jobID, err)
-		return
-	}
-	if anyFailed {
-		if err := e.store.SetJobError(jobID, "one or more tasks failed"); err != nil {
-			log.Printf("[executor] cannot set job error for %s: %v", jobID, err)
-		}
-		log.Printf("[executor] job %s finalised — FAILED", jobID)
-		return
-	}
-
-	job, err := e.store.GetJob(jobID)
-	if err != nil {
-		log.Printf("[executor] cannot fetch job %s for finalisation: %v", jobID, err)
-		return
-	}
-	aggregated := buildAggregatedResult(job)
-	if err := e.store.SetJobResult(jobID, aggregated); err != nil {
-		log.Printf("[executor] cannot set job result for %s: %v", jobID, err)
-		return
-	}
-	log.Printf("[executor] job %s finalised — COMPLETED", jobID)
+	e.orch.Publish(orchestrator.Event{
+		Type:   evtType,
+		JobID:  jobID,
+		TaskID: taskID,
+	})
 }
 
-// requeueWithBackoff delays and then re-submits a task to the queue for retry.
 func (e *Executor) requeueWithBackoff(task models.Task, delay time.Duration) {
 	if delay > requeueBackoffMax {
 		delay = requeueBackoffMax
@@ -285,22 +301,23 @@ func (e *Executor) requeueWithBackoff(task models.Task, delay time.Duration) {
 	go func() {
 		time.Sleep(delay)
 		if err := e.queue.Requeue(task); err != nil {
-			log.Printf("[executor] requeue failed for task %s: %v", task.ID, err)
+			e.obs.Log.Warn(context.Background(), "executor: requeue failed",
+				observability.F("task_id", task.ID),
+				observability.F("err", err.Error()),
+			)
 		}
 	}()
 }
 
-// buildInput prepares the data needed by a tool by merging task payload and job context.
-func buildInput(task models.Task, job *models.Job) map[string]any {
+func buildInput(task models.Task, job *models.Job, memContext string) map[string]any {
 	var input map[string]any
-
 	if m, ok := task.Payload.(map[string]any); ok {
-		input = make(map[string]any, len(m)+4)
+		input = make(map[string]any, len(m)+6)
 		for k, v := range m {
 			input[k] = v
 		}
 	} else {
-		input = make(map[string]any, 4)
+		input = make(map[string]any, 6)
 		if task.Payload != nil {
 			input["data"] = task.Payload
 		}
@@ -309,6 +326,10 @@ func buildInput(task models.Task, job *models.Job) map[string]any {
 	input["job_id"] = task.JobID
 	input["task_id"] = task.ID
 	input["goal"] = job.Goal
+
+	if memContext != "" {
+		input["memory_context"] = memContext
+	}
 
 	results := make([]any, 0, len(job.Tasks))
 	for _, t := range job.Tasks {
@@ -321,22 +342,4 @@ func buildInput(task models.Task, job *models.Job) map[string]any {
 	}
 
 	return input
-}
-
-// buildAggregatedResult collects and structures the final results of all tasks in a job.
-func buildAggregatedResult(job *models.Job) map[string]any {
-	taskResults := make([]map[string]any, 0, len(job.Tasks))
-	for _, t := range job.Tasks {
-		taskResults = append(taskResults, map[string]any{
-			"id":     t.ID,
-			"type":   t.Type,
-			"result": t.Result,
-		})
-	}
-	return map[string]any{
-		"job_id":       job.ID,
-		"goal":         job.Goal,
-		"task_results": taskResults,
-		"task_count":   len(job.Tasks),
-	}
 }

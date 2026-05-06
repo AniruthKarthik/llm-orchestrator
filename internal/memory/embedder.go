@@ -7,8 +7,6 @@ import (
 	"math"
 	"strings"
 	"sync"
-
-	"google.golang.org/grpc/balancer/leastrequest"
 )
 
 type Embedder interface {
@@ -17,6 +15,12 @@ type Embedder interface {
 }
 
 const mockDimensions = 64
+
+func NewMockEmbedder() *MockEmbedder {
+	return &MockEmbedder{
+		dims: mockDimensions,
+	}
+}
 
 type MockEmbedder struct {
 	dims int
