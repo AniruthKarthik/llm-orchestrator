@@ -19,6 +19,7 @@ type Planner struct {
 	obs       *observability.Obs
 }
 
+// New creates a new Planner with the provided LLM client and options.
 func New(client llm.Client, opts ...Option) *Planner {
 	p := &Planner{
 		llm: client,
@@ -36,14 +37,17 @@ func New(client llm.Client, opts ...Option) *Planner {
 
 type Option func(*Planner)
 
+// WithRetriever configures the planner to use a memory retriever.
 func WithRetriever(r *memory.Retriever) Option {
 	return func(p *Planner) { p.retriever = r }
 }
 
+// WithObs configures the planner to use a specific observability bundle.
 func WithObs(obs *observability.Obs) Option {
 	return func(p *Planner) { p.obs = obs }
 }
 
+// Plan uses the LLM to decompose a goal into a series of executable tasks.
 func (p *Planner) Plan(ctx context.Context, goal string) ([]models.Task, error) {
 	spanCtx, span := p.obs.Tracer.Start(ctx, "planner.Plan")
 	defer span.End(spanCtx)
@@ -102,6 +106,7 @@ func (p *Planner) Plan(ctx context.Context, goal string) ([]models.Task, error) 
 	return nil, fmt.Errorf("planner exhausted %d attempts, last error: %w", maxPlanRetries, lastErr)
 }
 
+// buildPrompt constructs the instruction sent to the LLM for task planning.
 func buildPrompt(goal, memContext string) string {
 	contextBlock := ""
 	if memContext != "" {
@@ -126,6 +131,7 @@ STRICT OUTPUT RULES:
 Goal: %s`, contextBlock, goal)
 }
 
+// parseTasks converts the raw LLM response into a validated slice of Task models.
 func parseTasks(raw json.RawMessage) ([]models.Task, error) {
 	if !json.Valid(raw) {
 		return nil, fmt.Errorf("LLM content is not valid JSON")
@@ -154,6 +160,7 @@ func parseTasks(raw json.RawMessage) ([]models.Task, error) {
 	return tasks, nil
 }
 
+// validateTask ensures an individual task has all required fields and a unique ID.
 func validateTask(index int, t models.Task, seen map[string]struct{}) error {
 	if t.ID == "" {
 		return fmt.Errorf("task[%d]: missing required field 'id'", index)

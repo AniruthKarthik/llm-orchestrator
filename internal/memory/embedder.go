@@ -16,6 +16,7 @@ type Embedder interface {
 
 const mockDimensions = 64
 
+// NewMockEmbedder returns a new MockEmbedder with default dimensions.
 func NewMockEmbedder() *MockEmbedder {
 	return &MockEmbedder{
 		dims: mockDimensions,
@@ -27,6 +28,7 @@ type MockEmbedder struct {
 	mu   sync.Mutex
 }
 
+// Embed converts text into a vector representation.
 func (e *MockEmbedder) Embed(_ context.Context, text string) ([]float64, error) {
 	if strings.TrimSpace(text) == "" {
 		return nil, fmt.Errorf("Embedder: text must not be empty")
@@ -36,10 +38,12 @@ func (e *MockEmbedder) Embed(_ context.Context, text string) ([]float64, error) 
 	return vec, nil
 }
 
+// Dimensions returns the size of the embedding vector.
 func (e *MockEmbedder) Dimensions() int {
 	return e.dims
 }
 
+// textToVector implements a deterministic mapping from text to a pseudo-random vector.
 func (e *MockEmbedder) textToVector(text string) []float64 {
 	h := md5.Sum([]byte(text))
 
@@ -67,6 +71,7 @@ func (e *MockEmbedder) textToVector(text string) []float64 {
 
 }
 
+// normalise scales a vector to unit length.
 func normalise(vec []float64) {
 	var norm float64
 	for _, v := range vec {
@@ -82,6 +87,7 @@ func normalise(vec []float64) {
 	}
 }
 
+// cosineSimilarity calculates the dot product of two vectors (assumed to be normalised).
 func cosineSimilarity(a, b []float64) float64 {
 	if len(a) != len(b) {
 		return 0

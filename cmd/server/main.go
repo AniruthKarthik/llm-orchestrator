@@ -40,6 +40,7 @@ import (
 	"github.com/AniruthKarthik/llm-orchestrator/internal/worker"
 )
 
+// main initializes the system dependencies, starts the worker pool, and launches the HTTP server.
 func main() {
 	addr := envOrDefault("SERVER_ADDR", ":8080")
 	workerCount := 4
@@ -132,6 +133,7 @@ func main() {
 	obs.Log.Info(rootCtx, "llm-orchestrator stopped cleanly")
 }
 
+// envOrDefault retrieves an environment variable or returns a fallback value if not set.
 func envOrDefault(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v

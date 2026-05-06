@@ -31,6 +31,7 @@ type Orchestrator struct {
 	activeJobs map[string]struct{}
 }
 
+// New creates a new Orchestrator instance with the provided dependencies.
 func New(
 	s store.Store,
 	q queue.Queue,
@@ -48,6 +49,7 @@ func New(
 	}
 }
 
+// Start begins the orchestrator's event loop in a background goroutine.
 func (o *Orchestrator) Start(ctx context.Context) {
 	o.wg.Add(1)
 	go func() {
@@ -57,12 +59,14 @@ func (o *Orchestrator) Start(ctx context.Context) {
 	o.obs.Log.Info(ctx, "orchestrator started")
 }
 
+// Stop gracefully shuts down the orchestrator and waits for the loop to exit.
 func (o *Orchestrator) Stop() {
 	close(o.stopCh)
 	o.wg.Wait()
 	o.obs.Log.Info(context.Background(), "orchestrator stopped")
 }
 
+// Publish sends an event to the orchestrator's event channel.
 func (o *Orchestrator) Publish(evt Event) {
 	select {
 	case o.events <- evt:
@@ -74,12 +78,14 @@ func (o *Orchestrator) Publish(evt Event) {
 	}
 }
 
+// TrackJob adds a job ID to the set of active jobs being managed by the orchestrator.
 func (o *Orchestrator) TrackJob(jobID string) {
 	o.mu.Lock()
 	o.activeJobs[jobID] = struct{}{}
 	o.mu.Unlock()
 }
 
+// loop runs the main control loop, handling events and periodic sweeps.
 func (o *Orchestrator) loop(ctx context.Context) {
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
@@ -98,6 +104,7 @@ func (o *Orchestrator) loop(ctx context.Context) {
 	}
 }
 
+// handleEvent processes a single event and coordinates the associated job.
 func (o *Orchestrator) handleEvent(ctx context.Context, evt Event) {
 	spanCtx, span := o.obs.Tracer.Start(ctx, "orchestrator.handleEvent")
 	defer span.End(spanCtx)
@@ -122,6 +129,7 @@ func (o *Orchestrator) handleEvent(ctx context.Context, evt Event) {
 	}
 }
 
+// sweepAll iterates through all active jobs and triggers coordination for each.
 func (o *Orchestrator) sweepAll(ctx context.Context) {
 	o.mu.RLock()
 	ids := make([]string, 0, len(o.activeJobs))
@@ -136,6 +144,7 @@ func (o *Orchestrator) sweepAll(ctx context.Context) {
 	}
 }
 
+// coordinateJob evaluates the state of a job and progresses it through its lifecycle.
 func (o *Orchestrator) coordinateJob(ctx context.Context, jobID string) {
 	job, err := o.store.GetJob(jobID)
 	if err != nil {
@@ -183,6 +192,7 @@ func (o *Orchestrator) coordinateJob(ctx context.Context, jobID string) {
 	}
 }
 
+// computePhase determines the current phase of a job based on its tasks' statuses.
 func (o *Orchestrator) computePhase(job *models.Job) jobPhase {
 	if len(job.Tasks) == 0 {
 		return phaseCompleted
@@ -210,6 +220,7 @@ func (o *Orchestrator) computePhase(job *models.Job) jobPhase {
 	return phaseCompleted
 }
 
+// collectReadyTasks identifies tasks that are ready to be executed (dependencies met).
 func (o *Orchestrator) collectReadyTasks(ctx context.Context, job *models.Job) []ReadyTask {
 	completed := make(map[string]bool, len(job.Tasks))
 	for _, t := range job.Tasks {
@@ -230,6 +241,7 @@ func (o *Orchestrator) collectReadyTasks(ctx context.Context, job *models.Job) [
 	return ready
 }
 
+// depsOK checks if all dependencies for a task have been successfully completed.
 func depsOK(t models.Task, completed map[string]bool) bool {
 	for _, dep := range t.DependsOn {
 		if !completed[dep] {
@@ -239,6 +251,7 @@ func depsOK(t models.Task, completed map[string]bool) bool {
 	return true
 }
 
+// enqueueTask pushes a ready task onto the execution queue.
 func (o *Orchestrator) enqueueTask(ctx context.Context, rt ReadyTask) error {
 	task := rt.Task
 	task.JobID = rt.JobID
@@ -253,6 +266,7 @@ func (o *Orchestrator) enqueueTask(ctx context.Context, rt ReadyTask) error {
 	return nil
 }
 
+// finaliseJob aggregates results and marks the job as finished in the store.
 func (o *Orchestrator) finaliseJob(ctx context.Context, job *models.Job, failed bool) {
 	if failed {
 		if err := o.store.SetJobError(job.ID, "one or more tasks failed"); err != nil {
@@ -275,12 +289,14 @@ func (o *Orchestrator) finaliseJob(ctx context.Context, job *models.Job, failed 
 	o.obs.Log.Info(ctx, "orchestrator: job finalised as completed")
 }
 
+// untrackJob removes a job ID from the set of active jobs.
 func (o *Orchestrator) untrackJob(jobID string) {
 	o.mu.Lock()
 	delete(o.activeJobs, jobID)
 	o.mu.Unlock()
 }
 
+// buildAggregatedResult constructs a summary map of all task results for a job.
 func buildAggregatedResult(job *models.Job) map[string]any {
 	taskResults := make([]map[string]any, 0, len(job.Tasks))
 	for _, t := range job.Tasks {

@@ -26,10 +26,12 @@ type InProcessTracer struct {
 	log Logger
 }
 
+// NewInProcessTracer creates a new InProcessTracer with the provided logger.
 func NewInProcessTracer(log Logger) *InProcessTracer {
 	return &InProcessTracer{log: log}
 }
 
+// Start begins a new span and returns a context containing the trace ID.
 func (t *InProcessTracer) Start(ctx context.Context, name string) (context.Context, Span) {
 	traceID := TraceIDFrom(ctx)
 	if traceID == "" {
@@ -60,6 +62,7 @@ type inProcessSpan struct {
 	log     Logger
 }
 
+// End finishes the span and logs its completion.
 func (s *inProcessSpan) End(ctx context.Context) {
 	fields := []Field{
 		F("span", s.name),
@@ -73,29 +76,42 @@ func (s *inProcessSpan) End(ctx context.Context) {
 	}
 }
 
+// SetError records an error message in the span.
 func (s *inProcessSpan) SetError(err error) {
 	if err != nil {
 		s.errMsg = err.Error()
 	}
 }
 
+// TraceID returns the trace identifier for the span.
 func (s *inProcessSpan) TraceID() string { return s.traceID }
-func (s *inProcessSpan) SpanID() string  { return s.spanID }
+
+// SpanID returns the unique identifier for the span.
+func (s *inProcessSpan) SpanID() string { return s.spanID }
 
 // NoopTracer produces no-op spans.  Safe to use when tracing is disabled.
 type NoopTracer struct{}
 
+// Start returns the context as-is and a no-op span.
 func (NoopTracer) Start(ctx context.Context, _ string) (context.Context, Span) {
 	return ctx, noopSpan{}
 }
 
 type noopSpan struct{}
 
+// End is a no-op.
 func (noopSpan) End(_ context.Context) {}
-func (noopSpan) SetError(_ error)      {}
-func (noopSpan) TraceID() string       { return "" }
-func (noopSpan) SpanID() string        { return "" }
 
+// SetError is a no-op.
+func (noopSpan) SetError(_ error) {}
+
+// TraceID returns an empty string.
+func (noopSpan) TraceID() string { return "" }
+
+// SpanID returns an empty string.
+func (noopSpan) SpanID() string { return "" }
+
+// newHexID generates a random hexadecimal string of the specified byte length.
 func newHexID(byteLen int) string {
 	b := make([]byte, byteLen)
 	if _, err := rand.Read(b); err != nil {

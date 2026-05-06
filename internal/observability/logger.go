@@ -17,44 +17,45 @@ const (
 	workerIDKey ctxKey = "worker_id"
 )
 
+// WithTraceID attaches a trace ID to the context.
 func WithTraceID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, traceIDKey, id)
 }
 
-// extracts the trace ID from ctx, returning "" if absent.
+// TraceIDFrom extracts the trace ID from ctx, returning "" if absent.
 func TraceIDFrom(ctx context.Context) string {
 	v, _ := ctx.Value(traceIDKey).(string)
 	return v
 }
 
-// attaches a job ID to ctx.
+// WithJobID attaches a job ID to ctx.
 func WithJobID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, jobIDKey, id)
 }
 
-// extracts the job ID from ctx.
+// JobIDFrom extracts the job ID from ctx.
 func JobIDFrom(ctx context.Context) string {
 	v, _ := ctx.Value(jobIDKey).(string)
 	return v
 }
 
-// attaches a task ID to ctx.
+// WithTaskID attaches a task ID to ctx.
 func WithTaskID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, taskIDKey, id)
 }
 
-// extracts the task ID from ctx.
+// TaskIDFrom extracts the task ID from ctx.
 func TaskIDFrom(ctx context.Context) string {
 	v, _ := ctx.Value(taskIDKey).(string)
 	return v
 }
 
-// attaches a worker ID to ctx.
+// WithWorkerID attaches a worker ID to ctx.
 func WithWorkerID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, workerIDKey, id)
 }
 
-// extracts the worker ID from ctx.
+// WorkerIDFrom extracts the worker ID from ctx.
 func WorkerIDFrom(ctx context.Context) string {
 	v, _ := ctx.Value(workerIDKey).(string)
 	return v
@@ -81,6 +82,7 @@ type Field struct {
 	Value any
 }
 
+// F creates a new logging field.
 func F(key string, value any) Field { return Field{Key: key, Value: value} }
 
 type entry struct {
@@ -94,14 +96,14 @@ type entry struct {
 	Fields    map[string]any `json:"fields,omitempty"`
 }
 
-// writes one JSON object per log call to w.
+// JSONLogger writes one JSON object per log call to w.
 type JSONLogger struct {
 	w      io.Writer
 	minLvl Level
 	enc    *json.Encoder
 }
 
-// creates a JSONLogger that writes to w.
+// NewJSONLogger creates a JSONLogger that writes to w.
 func NewJSONLogger(w io.Writer, minLevel Level) *JSONLogger {
 	if w == nil {
 		w = os.Stderr
@@ -116,6 +118,7 @@ func NewDefaultLogger() *JSONLogger {
 	return NewJSONLogger(os.Stderr, LevelInfo)
 }
 
+// log handles the internal logic of formatting and writing a log entry.
 func (l *JSONLogger) log(ctx context.Context, lvl Level, msg string, fields []Field) {
 	if !l.shouldLog(lvl) {
 		return
@@ -141,20 +144,28 @@ func (l *JSONLogger) log(ctx context.Context, lvl Level, msg string, fields []Fi
 	_ = l.enc.Encode(e)
 }
 
+// shouldLog returns true if the given level is greater than or equal to the logger's minimum level.
 func (l *JSONLogger) shouldLog(lvl Level) bool {
 	order := map[Level]int{LevelDebug: 0, LevelInfo: 1, LevelWarn: 2, LevelError: 3}
 	return order[lvl] >= order[l.minLvl]
 }
 
+// Debug logs a message at the DEBUG level.
 func (l *JSONLogger) Debug(ctx context.Context, msg string, fields ...Field) {
 	l.log(ctx, LevelDebug, msg, fields)
 }
+
+// Info logs a message at the INFO level.
 func (l *JSONLogger) Info(ctx context.Context, msg string, fields ...Field) {
 	l.log(ctx, LevelInfo, msg, fields)
 }
+
+// Warn logs a message at the WARN level.
 func (l *JSONLogger) Warn(ctx context.Context, msg string, fields ...Field) {
 	l.log(ctx, LevelWarn, msg, fields)
 }
+
+// Error logs a message at the ERROR level.
 func (l *JSONLogger) Error(ctx context.Context, msg string, fields ...Field) {
 	l.log(ctx, LevelError, msg, fields)
 }
@@ -162,7 +173,14 @@ func (l *JSONLogger) Error(ctx context.Context, msg string, fields ...Field) {
 // NoopLogger discards all log entries.  Useful in tests.
 type NoopLogger struct{}
 
+// Debug is a no-op.
 func (NoopLogger) Debug(_ context.Context, _ string, _ ...Field) {}
-func (NoopLogger) Info(_ context.Context, _ string, _ ...Field)  {}
-func (NoopLogger) Warn(_ context.Context, _ string, _ ...Field)  {}
+
+// Info is a no-op.
+func (NoopLogger) Info(_ context.Context, _ string, _ ...Field) {}
+
+// Warn is a no-op.
+func (NoopLogger) Warn(_ context.Context, _ string, _ ...Field) {}
+
+// Error is a no-op.
 func (NoopLogger) Error(_ context.Context, _ string, _ ...Field) {}

@@ -17,10 +17,12 @@ type Worker struct {
 	obs      *observability.Obs
 }
 
+// newWorker creates a single worker instance for the pool.
 func newWorker(id int, q queue.Queue, exec *executor.Executor, obs *observability.Obs) *Worker {
 	return &Worker{id: id, queue: q, executor: exec, obs: obs}
 }
 
+// run is the internal loop where the worker waits for and executes tasks.
 func (w *Worker) run(ctx context.Context) {
 	workerID := fmt.Sprintf("worker-%d", w.id)
 	ctx = observability.WithWorkerID(ctx, workerID)

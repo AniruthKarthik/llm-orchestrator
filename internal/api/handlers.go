@@ -26,6 +26,7 @@ type Handler struct {
 	obs   *observability.Obs
 }
 
+// NewHandler creates a new instance of the API handler with its dependencies.
 func NewHandler(
 	s store.Store,
 	p *planner.Planner,
@@ -46,6 +47,7 @@ type createJobResponse struct {
 	TraceID string `json:"trace_id,omitempty"`
 }
 
+// CreateJob handles the POST /job request to start a new high-level goal.
 func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.obs.Tracer.Start(r.Context(), "api.CreateJob")
 	defer span.End(ctx)
@@ -125,6 +127,7 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetJob handles the GET /job/{id} request to retrieve the current state of a job.
 func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.obs.Tracer.Start(r.Context(), "api.GetJob")
 	defer span.End(ctx)
@@ -147,6 +150,7 @@ func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
 	utils.WriteJSON(w, http.StatusOK, job)
 }
 
+// GetJobResult handles the GET /job/{id}/result request to retrieve the final output if available.
 func (h *Handler) GetJobResult(w http.ResponseWriter, r *http.Request) {
 	ctx, span := h.obs.Tracer.Start(r.Context(), "api.GetJobResult")
 	defer span.End(ctx)
@@ -185,11 +189,13 @@ func (h *Handler) GetJobResult(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetMetrics handles the GET /metrics request to retrieve a snapshot of the system telemetry.
 func (h *Handler) GetMetrics(w http.ResponseWriter, r *http.Request) {
 	snapshot := h.obs.Metrics.Snapshot()
 	utils.WriteJSON(w, http.StatusOK, snapshot)
 }
 
+// jobIDFromPath extracts the job ID from a URL path.
 func jobIDFromPath(path string) string {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) < 2 {
@@ -198,6 +204,7 @@ func jobIDFromPath(path string) string {
 	return parts[len(parts)-1]
 }
 
+// newID generates a random UUID-like string.
 func newID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {

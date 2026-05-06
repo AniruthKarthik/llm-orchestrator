@@ -11,6 +11,7 @@ type Retriever struct {
 	topK  int
 }
 
+// NewRetriever creates a new Retriever with the specified store and result limit.
 func NewRetriever(s MemoryStore, topK int) *Retriever {
 	if topK <= 0 {
 		topK = 5
@@ -18,6 +19,7 @@ func NewRetriever(s MemoryStore, topK int) *Retriever {
 	return &Retriever{store: s, topK: topK}
 }
 
+// RetrieveContext searches the memory store and returns a formatted string of relevant snippets.
 func (r *Retriever) RetrieveContext(ctx context.Context, query string) (string, error) {
 	results, err := r.store.Search(ctx, query, r.topK)
 	if err != nil {
@@ -44,6 +46,7 @@ func (r *Retriever) RetrieveContext(ctx context.Context, query string) (string, 
 	return sb.String(), nil
 }
 
+// StoreTaskResult formats and persists a task's output into the memory store.
 func (r *Retriever) StoreTaskResult(ctx context.Context, jobID, taskID, taskType string, result map[string]any) error {
 	key := fmt.Sprintf("job:%s:task:%s", jobID, taskID)
 	value := map[string]any{
@@ -63,6 +66,7 @@ func (r *Retriever) StoreTaskResult(ctx context.Context, jobID, taskID, taskType
 	return nil
 }
 
+// StoreJobGoal persists the primary objective of a job into the memory store.
 func (r *Retriever) StoreJobGoal(ctx context.Context, jobID, goal string) error {
 	key := fmt.Sprintf("job:%s:goal", jobID)
 	return r.store.Store(ctx, key, map[string]any{

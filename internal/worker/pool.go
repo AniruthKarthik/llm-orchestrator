@@ -33,7 +33,7 @@ func NewPool(size int, q queue.Queue, exec *executor.Executor, obs *observabilit
 	}
 }
 
-// Start launches all worker goroutines.
+// Start launches all worker goroutines and begins processing tasks.
 func (p *Pool) Start(ctx context.Context) {
 	poolCtx, cancel := context.WithCancel(ctx)
 	p.cancel = cancel
@@ -52,7 +52,7 @@ func (p *Pool) Start(ctx context.Context) {
 	}
 }
 
-// Stop signals all workers to stop and waits for them to finish.
+// Stop signals all workers to stop and waits for them to finish their current tasks.
 func (p *Pool) Stop() {
 	p.obs.Log.Info(context.Background(), "worker pool stop requested")
 	if p.cancel != nil {

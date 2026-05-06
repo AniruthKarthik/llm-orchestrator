@@ -45,6 +45,7 @@ type InMemoryMetrics struct {
 	totalExecuted atomic.Int64
 }
 
+// NewInMemoryMetrics creates a new instance of InMemoryMetrics.
 func NewInMemoryMetrics() *InMemoryMetrics {
 	return &InMemoryMetrics{
 		durations:   make(map[string][]float64),
@@ -52,6 +53,7 @@ func NewInMemoryMetrics() *InMemoryMetrics {
 	}
 }
 
+// RecordTaskDuration tracks how long a task took to execute and its outcome.
 func (m *InMemoryMetrics) RecordTaskDuration(_ context.Context, taskType string, d time.Duration, success bool) {
 	suffix := "success"
 	if !success {
@@ -67,24 +69,29 @@ func (m *InMemoryMetrics) RecordTaskDuration(_ context.Context, taskType string,
 	m.totalExecuted.Add(1)
 }
 
+// IncTaskRetry increments the retry counter for a specific task type.
 func (m *InMemoryMetrics) IncTaskRetry(_ context.Context, taskType string) {
 	m.mu.Lock()
 	m.retryCounts[taskType]++
 	m.mu.Unlock()
 }
 
+// SetQueueSize updates the current depth of the task queue.
 func (m *InMemoryMetrics) SetQueueSize(_ context.Context, size int) {
 	m.queueSize.Store(int64(size))
 }
 
+// IncWorkerActive increments the count of workers currently processing tasks.
 func (m *InMemoryMetrics) IncWorkerActive(_ context.Context) {
 	m.activeWorkers.Add(1)
 }
 
+// DecWorkerActive decrements the count of active workers.
 func (m *InMemoryMetrics) DecWorkerActive(_ context.Context) {
 	m.activeWorkers.Add(-1)
 }
 
+// Snapshot returns a point-in-time copy of all recorded metrics.
 func (m *InMemoryMetrics) Snapshot() MetricsSnapshot {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -113,12 +120,23 @@ func (m *InMemoryMetrics) Snapshot() MetricsSnapshot {
 // NoopMetrics implements Metrics and discards all data.  Safe for tests.
 type NoopMetrics struct{}
 
+// RecordTaskDuration is a no-op.
 func (NoopMetrics) RecordTaskDuration(_ context.Context, _ string, _ time.Duration, _ bool) {}
-func (NoopMetrics) IncTaskRetry(_ context.Context, _ string)                                {}
-func (NoopMetrics) SetQueueSize(_ context.Context, _ int)                                   {}
-func (NoopMetrics) IncWorkerActive(_ context.Context)                                       {}
-func (NoopMetrics) DecWorkerActive(_ context.Context)                                       {}
-func (NoopMetrics) Snapshot() MetricsSnapshot                                               { return MetricsSnapshot{} }
+
+// IncTaskRetry is a no-op.
+func (NoopMetrics) IncTaskRetry(_ context.Context, _ string) {}
+
+// SetQueueSize is a no-op.
+func (NoopMetrics) SetQueueSize(_ context.Context, _ int) {}
+
+// IncWorkerActive is a no-op.
+func (NoopMetrics) IncWorkerActive(_ context.Context) {}
+
+// DecWorkerActive is a no-op.
+func (NoopMetrics) DecWorkerActive(_ context.Context) {}
+
+// Snapshot returns an empty MetricsSnapshot.
+func (NoopMetrics) Snapshot() MetricsSnapshot { return MetricsSnapshot{} }
 
 // ── convenience bundle ────────────────────────────────────────────────────────
 
@@ -129,10 +147,12 @@ type Obs struct {
 	Metrics Metrics
 }
 
+// NewObs creates a new observability bundle.
 func NewObs(l Logger, t Tracer, m Metrics) *Obs {
 	return &Obs{Log: l, Tracer: t, Metrics: m}
 }
 
+// Default returns a standard observability bundle using JSON logging to stderr.
 func Default() *Obs {
 	l := NewDefaultLogger()
 	return &Obs{

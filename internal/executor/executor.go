@@ -29,6 +29,7 @@ type Executor struct {
 	obs       *observability.Obs
 }
 
+// New creates a new Executor with the necessary store, queue, tool registry, memory, and observability bundle.
 func New(
 	s store.Store,
 	q queue.Queue,
@@ -49,6 +50,7 @@ func New(
 	}
 }
 
+// SetOrchestrator sets the orchestrator for the executor to publish events.
 func (e *Executor) SetOrchestrator(o *orchestrator.Orchestrator) {
 	e.orch = o
 }
@@ -186,6 +188,7 @@ const (
 	depStateFailed
 )
 
+// checkDeps determines if all upstream tasks have been completed successfully.
 func (e *Executor) checkDeps(jobID, taskID string) (depState, error) {
 	task, err := e.store.GetTask(jobID, taskID)
 	if err != nil {
@@ -207,6 +210,7 @@ func (e *Executor) checkDeps(jobID, taskID string) (depState, error) {
 	return depStateReady, nil
 }
 
+// executeWithRetry runs a tool with a specific input, retrying on failure up to maxTaskRetries.
 func (e *Executor) executeWithRetry(
 	ctx context.Context,
 	task models.Task,
@@ -257,6 +261,7 @@ func (e *Executor) executeWithRetry(
 	return nil, fmt.Errorf("all %d attempts failed, last: %w", maxTaskRetries, lastErr)
 }
 
+// resolveTool maps a task type string to its corresponding tool implementation.
 func (e *Executor) resolveTool(taskType string) (tools.Tool, error) {
 	if t, ok := e.tools[taskType]; ok {
 		return t, nil
@@ -276,6 +281,7 @@ func (e *Executor) resolveTool(taskType string) (tools.Tool, error) {
 	return nil, fmt.Errorf("no tool registered for task type %q", taskType)
 }
 
+// failTask marks a task as failed in the store and logs the reason.
 func (e *Executor) failTask(ctx context.Context, task models.Task, reason string) {
 	if err := e.store.UpdateTaskStatus(task.JobID, task.ID, models.TaskStatusFailed); err != nil {
 		e.obs.Log.Error(ctx, "executor: cannot mark task failed", observability.F("err", err.Error()))
@@ -283,6 +289,7 @@ func (e *Executor) failTask(ctx context.Context, task models.Task, reason string
 	e.obs.Log.Warn(ctx, "executor: task marked failed", observability.F("reason", reason))
 }
 
+// publishEvent sends an event to the orchestrator.
 func (e *Executor) publishEvent(evtType orchestrator.EventType, jobID, taskID string) {
 	if e.orch == nil {
 		return
@@ -294,6 +301,7 @@ func (e *Executor) publishEvent(evtType orchestrator.EventType, jobID, taskID st
 	})
 }
 
+// requeueWithBackoff delays and then re-submits a task to the queue for retry.
 func (e *Executor) requeueWithBackoff(task models.Task, delay time.Duration) {
 	if delay > requeueBackoffMax {
 		delay = requeueBackoffMax
@@ -309,6 +317,7 @@ func (e *Executor) requeueWithBackoff(task models.Task, delay time.Duration) {
 	}()
 }
 
+// buildInput prepares the data needed by a tool by merging task payload, job context, and memory context.
 func buildInput(task models.Task, job *models.Job, memContext string) map[string]any {
 	var input map[string]any
 	if m, ok := task.Payload.(map[string]any); ok {

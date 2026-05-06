@@ -8,6 +8,7 @@ import (
 	"github.com/AniruthKarthik/llm-orchestrator/internal/observability"
 )
 
+// NewRouter constructs the HTTP mux and applies middleware.
 func NewRouter(h *Handler) http.Handler {
 	mux := http.NewServeMux()
 
@@ -26,6 +27,7 @@ func NewRouter(h *Handler) http.Handler {
 	return loggingMiddleware(mux, h.obs)
 }
 
+// loggingMiddleware wraps an http.Handler to provide request logging and tracing.
 func loggingMiddleware(next http.Handler, obs *observability.Obs) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -53,6 +55,7 @@ type responseWriter struct {
 	status int
 }
 
+// WriteHeader captures the status code before sending it to the underlying ResponseWriter.
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.status = code
 	rw.ResponseWriter.WriteHeader(code)

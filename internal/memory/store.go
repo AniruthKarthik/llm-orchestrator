@@ -35,6 +35,7 @@ type InMemoryStore struct {
 	embedder Embedder
 }
 
+// NewInMemoryStore initializes a new InMemoryStore with the given embedder.
 func NewInMemoryStore(e Embedder) *InMemoryStore {
 	return &InMemoryStore{
 		docs:     make(map[string]*document),
@@ -42,6 +43,7 @@ func NewInMemoryStore(e Embedder) *InMemoryStore {
 	}
 }
 
+// Store embeds the key/value pair and persists it in the in-memory store.
 func (s *InMemoryStore) Store(ctx context.Context, key string, value map[string]any) error {
 	if key == "" {
 		return fmt.Errorf("memory: key must not be empty")
@@ -76,6 +78,7 @@ func (s *InMemoryStore) Store(ctx context.Context, key string, value map[string]
 	return nil
 }
 
+// Search finds the top-K most similar documents to the query string based on cosine similarity.
 func (s *InMemoryStore) Search(ctx context.Context, query string, topK int) ([]SearchResult, error) {
 	if query == "" {
 		return nil, fmt.Errorf("memory: query must not be empty")
@@ -123,6 +126,7 @@ func (s *InMemoryStore) Search(ctx context.Context, query string, topK int) ([]S
 	return results, nil
 }
 
+// Delete removes a document from the store by its key.
 func (s *InMemoryStore) Delete(_ context.Context, key string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -136,12 +140,14 @@ func (s *InMemoryStore) Delete(_ context.Context, key string) error {
 	return nil
 }
 
+// Size returns the total number of documents currently stored.
 func (s *InMemoryStore) Size() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return len(s.docs)
 }
 
+// buildEmbedText constructs a searchable string representation of a key/value pair.
 func buildEmbedText(key string, value map[string]any) string {
 	parts := []string{key}
 	for k, v := range value {
@@ -158,6 +164,7 @@ func buildEmbedText(key string, value map[string]any) string {
 	return text
 }
 
+// copyMap creates a shallow copy of a map[string]any.
 func copyMap(m map[string]any) map[string]any {
 	cp := make(map[string]any, len(m))
 	for k, v := range m {
