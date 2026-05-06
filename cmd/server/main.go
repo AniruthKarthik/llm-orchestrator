@@ -11,18 +11,35 @@ import (
 	"time"
 
 	"github.com/AniruthKarthik/llm-orchestrator/internal/api"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/executor"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/llm"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/planner"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/queue"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/store"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/tools"
 )
 
 func main() {
 	addr := envOrDefault("SERVER_ADDR", ":8080")
 
+	// Dependencies
+	st := store.New()
+	q := queue.New(100)
 	llmClient := llm.NewMockClient()
 
 	p := planner.New(llmClient)
 
-	h := api.NewHandler(p)
+	// Tools registry
+	registry := []tools.Tool{
+		tools.NewSearchTool(),
+		tools.NewFetchTool(),
+		tools.NewSummarizeTool(llmClient),
+		tools.NewReportTool(),
+	}
+
+	exec := executor.New(st, q, registry)
+
+	h := api.NewHandler(st, q, p)
 
 	router := api.NewRouter(h)
 
@@ -33,6 +50,12 @@ func main() {
 		WriteTimeout: 90 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Start Executor worker loop
+	go exec.Start(ctx)
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
@@ -46,11 +69,12 @@ func main() {
 
 	<-stop
 	log.Println("[server] shutdown signal received")
+	cancel() // Stop executor loop
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
 
-	if err := srv.Shutdown(ctx); err != nil {
+	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Fatalf("[server] graceful shutdown failed: %v", err)
 	}
 

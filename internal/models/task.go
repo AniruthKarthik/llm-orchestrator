@@ -4,6 +4,7 @@ type TaskStatus string
 
 const (
 	TaskStatusPending   TaskStatus = "pending"
+	TaskStatusWaiting   TaskStatus = "waiting"
 	TaskStatusRunning   TaskStatus = "running"
 	TaskStatusCompleted TaskStatus = "completed"
 	TaskStatusFailed    TaskStatus = "failed"
@@ -11,6 +12,7 @@ const (
 
 type Task struct {
 	ID        string     `json:"id"`
+	JobID     string     `json:"job_id"`
 	Type      string     `json:"type"`
 	Payload   any        `json:"payload"`
 	Status    TaskStatus `json:"status"`

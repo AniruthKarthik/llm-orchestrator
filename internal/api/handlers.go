@@ -8,44 +8,25 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/AniruthKarthik/llm-orchestrator/internal/models"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/planner"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/queue"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/store"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/utils"
 )
 
-type jobStore struct {
-	mu   sync.RWMutex
-	jobs map[string]*models.Job
-}
-
-func newJobStore() *jobStore {
-	return &jobStore{jobs: make(map[string]*models.Job)}
-}
-
-func (s *jobStore) set(job *models.Job) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.jobs[job.ID] = job
-}
-
-func (s *jobStore) get(id string) (*models.Job, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	j, ok := s.jobs[id]
-	return j, ok
-}
-
 type Handler struct {
-	store   *jobStore
+	store   store.Store
+	queue   queue.Queue
 	planner *planner.Planner
 }
 
-func NewHandler(p *planner.Planner) *Handler {
+func NewHandler(s store.Store, q queue.Queue, p *planner.Planner) *Handler {
 	return &Handler{
-		store:   newJobStore(),
+		store:   s,
+		queue:   q,
 		planner: p,
 	}
 }
@@ -82,7 +63,10 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	h.store.set(job)
+	if err := h.store.SaveJob(job); err != nil {
+		utils.WriteError(w, http.StatusInternalServerError, fmt.Sprintf("failed to save job: %v", err))
+		return
+	}
 
 	log.Printf("[handler] created job %s for goal: %q", jobID, req.Goal)
 
@@ -92,20 +76,33 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	tasks, err := h.planner.Plan(ctx, req.Goal)
 	if err != nil {
 		log.Printf("[handler] planning failed for job %s: %v", jobID, err)
-		h.updateJob(jobID, func(j *models.Job) {
-			j.Status = models.JobStatusFailed
-			j.Error = fmt.Sprintf("planning failed: %v", err)
-			j.UpdatedAt = time.Now().UTC()
-		})
+		if err := h.store.SetJobError(jobID, fmt.Sprintf("planning failed: %v", err)); err != nil {
+			log.Printf("[handler] failed to update job status: %v", err)
+		}
 		utils.WriteJSON(w, http.StatusAccepted, createJobResponse{ID: jobID, Status: string(models.JobStatusFailed)})
 		return
 	}
 
-	h.updateJob(jobID, func(j *models.Job) {
-		j.Tasks = tasks
-		j.Status = models.JobStatusQueued
-		j.UpdatedAt = time.Now().UTC()
-	})
+	// Set JobID for each task and update job in store
+	for i := range tasks {
+		tasks[i].JobID = jobID
+	}
+
+	if err := h.store.UpdateJobStatus(jobID, models.JobStatusQueued); err != nil {
+		log.Printf("[handler] failed to update job status: %v", err)
+	}
+
+	// Update tasks in job
+	if err := h.store.UpdateJobTasks(jobID, tasks); err != nil {
+		log.Printf("[handler] failed to update job tasks: %v", err)
+	}
+
+	// Enqueue tasks
+	for _, task := range tasks {
+		if err := h.queue.Enqueue(task); err != nil {
+			log.Printf("[handler] failed to enqueue task %s: %v", task.ID, err)
+		}
+	}
 
 	utils.WriteJSON(w, http.StatusAccepted, createJobResponse{ID: jobID, Status: string(models.JobStatusQueued)})
 }
@@ -117,8 +114,8 @@ func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, ok := h.store.get(id)
-	if !ok {
+	job, err := h.store.GetJob(id)
+	if err != nil {
 		utils.WriteError(w, http.StatusNotFound, fmt.Sprintf("job %q not found", id))
 		return
 	}
@@ -133,8 +130,8 @@ func (h *Handler) GetJobResult(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	job, ok := h.store.get(id)
-	if !ok {
+	job, err := h.store.GetJob(id)
+	if err != nil {
 		utils.WriteError(w, http.StatusNotFound, fmt.Sprintf("job %q not found", id))
 		return
 	}
@@ -157,14 +154,6 @@ func (h *Handler) GetJobResult(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---- helpers ----------------------------------------------------------------
-
-func (h *Handler) updateJob(id string, fn func(*models.Job)) {
-	h.store.mu.Lock()
-	defer h.store.mu.Unlock()
-	if j, ok := h.store.jobs[id]; ok {
-		fn(j)
-	}
-}
 
 // newID generates a cryptographically random 16-byte hex string used as a Job
 // ID.  Using crypto/rand avoids the need for an external UUID library.
