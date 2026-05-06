@@ -23,6 +23,7 @@ type Handler struct {
 	queue   queue.Queue
 }
 
+// NewHandler initializes the API handler with its required dependencies.
 func NewHandler(s store.Store, p *planner.Planner, q queue.Queue) *Handler {
 	return &Handler{store: s, planner: p, queue: q}
 }
@@ -36,6 +37,7 @@ type createJobResponse struct {
 	Status string `json:"status"`
 }
 
+// CreateJob parses a goal from the user and triggers the planning and queuing of a new job.
 func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	var req createJobRequest
 	if err := utils.DecodeJSON(r, &req); err != nil {
@@ -105,6 +107,7 @@ func (h *Handler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetJob retrieves the current state of a job including all its tasks.
 func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
 	id := jobIDFromPath(r.URL.Path)
 	if id == "" {
@@ -121,6 +124,7 @@ func (h *Handler) GetJob(w http.ResponseWriter, r *http.Request) {
 	utils.WriteJSON(w, http.StatusOK, job)
 }
 
+// GetJobResult returns the final aggregated outcome of a completed job.
 func (h *Handler) GetJobResult(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimSuffix(r.URL.Path, "/result")
 	id := jobIDFromPath(path)
@@ -152,6 +156,7 @@ func (h *Handler) GetJobResult(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// jobIDFromPath extracts the UUID-like job identifier from a URL path.
 func jobIDFromPath(path string) string {
 	parts := strings.Split(strings.Trim(path, "/"), "/")
 	if len(parts) < 2 {
@@ -160,6 +165,7 @@ func jobIDFromPath(path string) string {
 	return parts[len(parts)-1]
 }
 
+// newID generates a cryptographically random UUID-formatted string.
 func newID() string {
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {

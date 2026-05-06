@@ -1,15 +1,4 @@
 // cmd/server/main.go — entry point for the LLM Orchestrator.
-//
-// Wiring order (bottom-up):
-//  1. Shared store
-//  2. LLM client
-//  3. Planner  (depends on LLM client)
-//  4. Task queue
-//  5. Tool registry
-//  6. Executor (depends on store, queue, tools)
-//  7. Worker pool (depends on queue, executor)
-//  8. API handler (depends on store, planner, queue)
-//  9. HTTP server
 package main
 
 import (
@@ -32,6 +21,7 @@ import (
 	"github.com/AniruthKarthik/llm-orchestrator/internal/worker"
 )
 
+// main initializes the system dependencies, starts the worker pool, and launches the HTTP server.
 func main() {
 	addr := envOrDefault("SERVER_ADDR", ":8080")
 	workerCount := 4
@@ -82,6 +72,7 @@ func main() {
 	log.Println("[server] stopped cleanly")
 }
 
+// envOrDefault retrieves an environment variable or returns a fallback value if not set.
 func envOrDefault(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v

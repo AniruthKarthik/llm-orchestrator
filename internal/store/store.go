@@ -29,10 +29,12 @@ type Memory struct {
 	jobs map[string]*models.Job
 }
 
+// New creates a new in-memory data store for jobs and tasks.
 func New() *Memory {
 	return &Memory{jobs: make(map[string]*models.Job)}
 }
 
+// SaveJob persists or updates a job and its associated tasks in the store.
 func (m *Memory) SaveJob(job *models.Job) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -40,6 +42,7 @@ func (m *Memory) SaveJob(job *models.Job) error {
 	return nil
 }
 
+// GetJob retrieves a job from the store by its ID, returning a copy.
 func (m *Memory) GetJob(id string) (*models.Job, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -51,6 +54,7 @@ func (m *Memory) GetJob(id string) (*models.Job, error) {
 	return &cp, nil
 }
 
+// UpdateJobStatus modifies the current status of a job in the store.
 func (m *Memory) UpdateJobStatus(id string, status models.JobStatus) error {
 	return m.mutateJob(id, func(j *models.Job) {
 		j.Status = status
@@ -58,6 +62,7 @@ func (m *Memory) UpdateJobStatus(id string, status models.JobStatus) error {
 	})
 }
 
+// UpdateJobTasks overwrites the task list for a specific job.
 func (m *Memory) UpdateJobTasks(id string, tasks []models.Task) error {
 	return m.mutateJob(id, func(j *models.Job) {
 		j.Tasks = tasks
@@ -65,6 +70,7 @@ func (m *Memory) UpdateJobTasks(id string, tasks []models.Task) error {
 	})
 }
 
+// SetJobResult stores the final aggregated result of a completed job.
 func (m *Memory) SetJobResult(id string, result any) error {
 	return m.mutateJob(id, func(j *models.Job) {
 		j.Result = result
@@ -73,6 +79,7 @@ func (m *Memory) SetJobResult(id string, result any) error {
 	})
 }
 
+// SetJobError records a failure message and marks the job as failed.
 func (m *Memory) SetJobError(id string, errMsg string) error {
 	return m.mutateJob(id, func(j *models.Job) {
 		j.Error = errMsg
@@ -81,6 +88,7 @@ func (m *Memory) SetJobError(id string, errMsg string) error {
 	})
 }
 
+// GetTask finds and returns a copy of a specific task within a job.
 func (m *Memory) GetTask(jobID, taskID string) (*models.Task, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -92,12 +100,14 @@ func (m *Memory) GetTask(jobID, taskID string) (*models.Task, error) {
 	return &cp, nil
 }
 
+// UpdateTaskStatus changes the current status of a task.
 func (m *Memory) UpdateTaskStatus(jobID, taskID string, status models.TaskStatus) error {
 	return m.mutateTask(jobID, taskID, func(t *models.Task) {
 		t.Status = status
 	})
 }
 
+// SetTaskResult stores the outcome of a successfully executed task.
 func (m *Memory) SetTaskResult(jobID, taskID string, result any) error {
 	return m.mutateTask(jobID, taskID, func(t *models.Task) {
 		t.Result = result
@@ -105,12 +115,14 @@ func (m *Memory) SetTaskResult(jobID, taskID string, result any) error {
 	})
 }
 
+// IncrTaskRetries increments the retry counter for a task.
 func (m *Memory) IncrTaskRetries(jobID, taskID string) error {
 	return m.mutateTask(jobID, taskID, func(t *models.Task) {
 		t.Retries++
 	})
 }
 
+// AllTasksDone checks if every task in a job has finished (success or failure).
 func (m *Memory) AllTasksDone(jobID string) (bool, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -127,6 +139,7 @@ func (m *Memory) AllTasksDone(jobID string) (bool, error) {
 	return true, nil
 }
 
+// AnyTaskFailed determines if at least one task in the job has failed.
 func (m *Memory) AnyTaskFailed(jobID string) (bool, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -142,6 +155,7 @@ func (m *Memory) AnyTaskFailed(jobID string) (bool, error) {
 	return false, nil
 }
 
+// DepsCompleted checks if all dependencies of a specific task are completed.
 func (m *Memory) DepsCompleted(jobID, taskID string) (bool, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -168,6 +182,7 @@ func (m *Memory) DepsCompleted(jobID, taskID string) (bool, error) {
 	return false, fmt.Errorf("store: task %q not found in job %q", taskID, jobID)
 }
 
+// mutateJob applies a mutation function to a job within a write lock.
 func (m *Memory) mutateJob(id string, fn func(*models.Job)) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -179,6 +194,7 @@ func (m *Memory) mutateJob(id string, fn func(*models.Job)) error {
 	return nil
 }
 
+// mutateTask applies a mutation function to a specific task within a write lock.
 func (m *Memory) mutateTask(jobID, taskID string, fn func(*models.Task)) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -190,6 +206,7 @@ func (m *Memory) mutateTask(jobID, taskID string, fn func(*models.Task)) error {
 	return nil
 }
 
+// findTask retrieves a pointer to a specific task (internal use, requires locking).
 func (m *Memory) findTask(jobID, taskID string) (*models.Task, error) {
 	j, ok := m.jobs[jobID]
 	if !ok {

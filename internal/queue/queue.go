@@ -24,6 +24,7 @@ type MemoryQueue struct {
 	mu     sync.Mutex
 }
 
+// New creates a new in-memory task queue with the specified buffer size.
 func New(bufferSize int) *MemoryQueue {
 	if bufferSize <= 0 {
 		bufferSize = defaultBufferSize
@@ -31,6 +32,7 @@ func New(bufferSize int) *MemoryQueue {
 	return &MemoryQueue{ch: make(chan models.Task, bufferSize)}
 }
 
+// Enqueue adds a task to the end of the queue for processing.
 func (q *MemoryQueue) Enqueue(task models.Task) error {
 	q.mu.Lock()
 	closed := q.closed
@@ -43,11 +45,13 @@ func (q *MemoryQueue) Enqueue(task models.Task) error {
 	return nil
 }
 
+// Dequeue retrieves the next available task from the queue.
 func (q *MemoryQueue) Dequeue() (models.Task, bool) {
 	task, ok := <-q.ch
 	return task, ok
 }
 
+// Requeue puts a task back into the queue for another attempt.
 func (q *MemoryQueue) Requeue(task models.Task) error {
 	q.mu.Lock()
 	closed := q.closed
@@ -64,6 +68,7 @@ func (q *MemoryQueue) Requeue(task models.Task) error {
 	}
 }
 
+// Close safely shuts down the queue and prevents further enqueuing.
 func (q *MemoryQueue) Close() {
 	q.once.Do(func() {
 		q.mu.Lock()
@@ -74,6 +79,7 @@ func (q *MemoryQueue) Close() {
 	})
 }
 
+// Len returns the current number of tasks waiting in the queue.
 func (q *MemoryQueue) Len() int {
 	return len(q.ch)
 }

@@ -14,10 +14,12 @@ type Worker struct {
 	executor *executor.Executor
 }
 
+// newWorker creates a single worker instance for the pool.
 func newWorker(id int, q queue.Queue, exec *executor.Executor) *Worker {
 	return &Worker{id: id, queue: q, executor: exec}
 }
 
+// run is the internal loop where the worker waits for and executes tasks.
 func (w *Worker) run(ctx context.Context) {
 	log.Printf("[worker-%d] started", w.id)
 	for {

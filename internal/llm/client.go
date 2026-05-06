@@ -26,10 +26,12 @@ type MockClient struct {
 	Timeout time.Duration
 }
 
+// NewMockClient returns a client that simulates LLM responses for testing.
 func NewMockClient() *MockClient {
 	return &MockClient{Timeout: defaultTimeout}
 }
 
+// SendPrompt simulates sending a prompt to an LLM with retries and backoff.
 func (c *MockClient) SendPrompt(ctx context.Context, prompt string) (*Response, error) {
 	var lasterr error
 
@@ -69,6 +71,7 @@ func (c *MockClient) SendPrompt(ctx context.Context, prompt string) (*Response, 
 	return nil, fmt.Errorf("LLM client exhausted %d retries, last error: %w", maxRetries, lasterr)
 }
 
+// callOnce performs a single simulated LLM call with random latency.
 func (c *MockClient) callOnce(ctx context.Context, _ string) ([]byte, error) {
 	latency := time.Duration(50+rand.Intn(150)) * time.Millisecond
 	select {

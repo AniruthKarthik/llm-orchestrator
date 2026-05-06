@@ -19,6 +19,7 @@ type Pool struct {
 	cancel   context.CancelFunc
 }
 
+// NewPool initializes a worker pool with a specific size and task source.
 func NewPool(size int, q queue.Queue, exec *executor.Executor) *Pool {
 	if size <= 0 {
 		size = defaultPoolSize
@@ -30,6 +31,7 @@ func NewPool(size int, q queue.Queue, exec *executor.Executor) *Pool {
 	}
 }
 
+// Start spawns the configured number of workers and begins processing tasks.
 func (p *Pool) Start(ctx context.Context) {
 	poolCtx, cancel := context.WithCancel(ctx)
 	p.cancel = cancel
@@ -46,6 +48,7 @@ func (p *Pool) Start(ctx context.Context) {
 	}
 }
 
+// Stop signals all workers to exit and waits for them to finish their current task.
 func (p *Pool) Stop() {
 	log.Println("[pool] stop requested")
 	if p.cancel != nil {

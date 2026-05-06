@@ -16,10 +16,12 @@ type Planner struct {
 	llm llm.Client
 }
 
+// New creates a new Planner with the provided LLM client.
 func New(client llm.Client) *Planner {
 	return &Planner{llm: client}
 }
 
+// Plan uses the LLM to decompose a goal into a series of executable tasks.
 func (p *Planner) Plan(ctx context.Context, goal string) ([]models.Task, error) {
 	prompt := buildPrompt(goal)
 	var lastErr error
@@ -52,6 +54,7 @@ func (p *Planner) Plan(ctx context.Context, goal string) ([]models.Task, error) 
 	return nil, fmt.Errorf("planner exhausted %d attempts,last error: %w", maxPlanRetries, lastErr)
 }
 
+// buildPrompt constructs the instruction sent to the LLM for task planning.
 func buildPrompt(goal string) string {
 
 	return fmt.Sprintf(`You are a task planning engine.
@@ -74,6 +77,7 @@ STRICT OUTPUT RULES:
 Goal: %s`, goal)
 }
 
+// parseTasks converts the raw LLM response into a validated slice of Task models.
 func parseTasks(raw json.RawMessage) ([]models.Task, error) {
 	if !json.Valid(raw) {
 		return nil, fmt.Errorf("LLM content is invalid")
@@ -109,6 +113,7 @@ func parseTasks(raw json.RawMessage) ([]models.Task, error) {
 	return tasks, nil
 }
 
+// validateTask ensures an individual task has all required fields and a unique ID.
 func validateTask(index int, t *models.Task, seen map[string]struct{}) error {
 	if t.ID == "" {
 		return fmt.Errorf("task[%d]: missing required field 'id'", index)

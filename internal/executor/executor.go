@@ -24,6 +24,7 @@ type Executor struct {
 	tools map[string]tools.Tool
 }
 
+// New creates a new Executor with the necessary store, queue, and tool registry.
 func New(s store.Store, q queue.Queue, registry []tools.Tool) *Executor {
 	toolMap := make(map[string]tools.Tool, len(registry))
 	for _, t := range registry {
@@ -32,6 +33,7 @@ func New(s store.Store, q queue.Queue, registry []tools.Tool) *Executor {
 	return &Executor{store: s, queue: q, tools: toolMap}
 }
 
+// Start runs a continuous loop that dequeues and processes tasks from the queue.
 func (e *Executor) Start(ctx context.Context) {
 	log.Println("[executor] starting worker loop")
 	for {
@@ -53,6 +55,7 @@ func (e *Executor) Start(ctx context.Context) {
 	}
 }
 
+// Run handles the complete lifecycle of a single task, from dependency checks to execution.
 func (e *Executor) Run(ctx context.Context, task models.Task) {
 	log.Printf("[executor] received task %s (job %s, type %s)", task.ID, task.JobID, task.Type)
 
@@ -142,6 +145,7 @@ const (
 	depStateFailed
 )
 
+// checkDeps determines if all upstream tasks have been completed successfully.
 func (e *Executor) checkDeps(jobID, taskID string) (depState, error) {
 	task, err := e.store.GetTask(jobID, taskID)
 	if err != nil {
@@ -163,6 +167,7 @@ func (e *Executor) checkDeps(jobID, taskID string) (depState, error) {
 	return depStateReady, nil
 }
 
+// executeWithRetry runs a tool with a specific input, retrying on failure up to maxTaskRetries.
 func (e *Executor) executeWithRetry(
 	ctx context.Context,
 	task models.Task,
@@ -207,6 +212,7 @@ func (e *Executor) executeWithRetry(
 	return nil, fmt.Errorf("all %d attempts failed, last: %w", maxTaskRetries, lastErr)
 }
 
+// resolveTool maps a task type string to its corresponding tool implementation.
 func (e *Executor) resolveTool(taskType string) (tools.Tool, error) {
 	if t, ok := e.tools[taskType]; ok {
 		return t, nil
@@ -226,6 +232,7 @@ func (e *Executor) resolveTool(taskType string) (tools.Tool, error) {
 	return nil, fmt.Errorf("no tool registered for task type %q", taskType)
 }
 
+// failTask marks a task as failed in the store and logs the reason.
 func (e *Executor) failTask(task models.Task, reason string) {
 	if err := e.store.UpdateTaskStatus(task.JobID, task.ID, models.TaskStatusFailed); err != nil {
 		log.Printf("[executor] cannot mark task %s failed: %v", task.ID, err)
@@ -233,6 +240,7 @@ func (e *Executor) failTask(task models.Task, reason string) {
 	log.Printf("[executor] task %s marked failed: %s", task.ID, reason)
 }
 
+// checkJobCompletion examines all tasks in a job and updates the job's final status if finished.
 func (e *Executor) checkJobCompletion(jobID string) {
 	done, err := e.store.AllTasksDone(jobID)
 	if err != nil {
@@ -269,6 +277,7 @@ func (e *Executor) checkJobCompletion(jobID string) {
 	log.Printf("[executor] job %s finalised — COMPLETED", jobID)
 }
 
+// requeueWithBackoff delays and then re-submits a task to the queue for retry.
 func (e *Executor) requeueWithBackoff(task models.Task, delay time.Duration) {
 	if delay > requeueBackoffMax {
 		delay = requeueBackoffMax
@@ -281,6 +290,7 @@ func (e *Executor) requeueWithBackoff(task models.Task, delay time.Duration) {
 	}()
 }
 
+// buildInput prepares the data needed by a tool by merging task payload and job context.
 func buildInput(task models.Task, job *models.Job) map[string]any {
 	var input map[string]any
 
@@ -313,6 +323,7 @@ func buildInput(task models.Task, job *models.Job) map[string]any {
 	return input
 }
 
+// buildAggregatedResult collects and structures the final results of all tasks in a job.
 func buildAggregatedResult(job *models.Job) map[string]any {
 	taskResults := make([]map[string]any, 0, len(job.Tasks))
 	for _, t := range job.Tasks {

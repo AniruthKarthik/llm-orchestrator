@@ -9,10 +9,13 @@ import (
 
 type SearchTool struct{}
 
+// NewSearchTool returns a new instance of the search tool.
 func NewSearchTool() *SearchTool { return &SearchTool{} }
 
+// Name returns the identifier of the tool.
 func (t *SearchTool) Name() string { return "search" }
 
+// Execute simulates a web search based on the provided query.
 func (t *SearchTool) Execute(ctx context.Context, input map[string]any) (map[string]any, error) {
 	query, err := requireString(input, "query")
 	if err != nil {
@@ -34,6 +37,7 @@ func (t *SearchTool) Execute(ctx context.Context, input map[string]any) (map[str
 	}, nil
 }
 
+// buildMockSearchResults generates dummy search results based on the query keywords.
 func buildMockSearchResults(query string) []map[string]any {
 	keywords := strings.Fields(strings.ToLower(query))
 	topic := "general"
@@ -63,6 +67,7 @@ func buildMockSearchResults(query string) []map[string]any {
 	}
 }
 
+// requireString ensures a specific key exists in a map and its value is a non-empty string.
 func requireString(input map[string]any, key string) (string, error) {
 	v, ok := input[key]
 	if !ok {

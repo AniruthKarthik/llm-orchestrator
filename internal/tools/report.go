@@ -8,10 +8,13 @@ import (
 
 type ReportTool struct{}
 
+// NewReportTool returns a new instance of the report generation tool.
 func NewReportTool() *ReportTool { return &ReportTool{} }
 
+// Name returns the identifier of the tool.
 func (t *ReportTool) Name() string { return "report" }
 
+// Execute compiles upstream task results into a structured final report.
 func (t *ReportTool) Execute(ctx context.Context, input map[string]any) (map[string]any, error) {
 	jobID, err := requireString(input, "job_id")
 	if err != nil {

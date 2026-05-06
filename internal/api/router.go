@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// NewRouter sets up the HTTP routes and applies global logging middleware.
 func NewRouter(h *Handler) http.Handler {
 	mux := http.NewServeMux()
 
@@ -16,6 +17,7 @@ func NewRouter(h *Handler) http.Handler {
 	return loggingMiddleware(mux)
 }
 
+// loggingMiddleware wraps a handler to log details about every HTTP request.
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -33,6 +35,7 @@ type responseWriter struct {
 	status int
 }
 
+// WriteHeader captures the status code before sending it to the client.
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.status = code
 	rw.ResponseWriter.WriteHeader(code)

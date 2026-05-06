@@ -13,12 +13,15 @@ type SummarizeTool struct {
 	llm llm.Client
 }
 
+// NewSummarizeTool returns a new instance of the summarize tool with an LLM client.
 func NewSummarizeTool(client llm.Client) *SummarizeTool {
 	return &SummarizeTool{llm: client}
 }
 
+// Name returns the identifier of the tool.
 func (t *SummarizeTool) Name() string { return "summarize" }
 
+// Execute uses the LLM to create a concise summary and extract key points from text.
 func (t *SummarizeTool) Execute(ctx context.Context, input map[string]any) (map[string]any, error) {
 	text, err := requireString(input, "text")
 	if err != nil {
@@ -43,6 +46,7 @@ func (t *SummarizeTool) Execute(ctx context.Context, input map[string]any) (map[
 	return result, nil
 }
 
+// buildSummarizePrompt creates the prompt for the LLM to generate a structured summary.
 func buildSummarizePrompt(text, topic string) string {
 	topicHint := ""
 	if topic != "" {
@@ -59,6 +63,7 @@ Text:
 %s`, topicHint, text)
 }
 
+// parseSummaryResponse attempts to parse the LLM output into a structured map.
 func parseSummaryResponse(raw json.RawMessage, originalText, topic string) (map[string]any, error) {
 	var direct struct {
 		Summary   string   `json:"summary"`

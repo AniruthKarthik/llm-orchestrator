@@ -9,10 +9,13 @@ import (
 
 type FetchTool struct{}
 
+// NewFetchTool returns a new instance of the fetch tool.
 func NewFetchTool() *FetchTool { return &FetchTool{} }
 
+// Name returns the identifier of the tool.
 func (t *FetchTool) Name() string { return "fetch" }
 
+// Execute simulates fetching content from a given URL.
 func (t *FetchTool) Execute(ctx context.Context, input map[string]any) (map[string]any, error) {
 	url, err := requireString(input, "url")
 	if err != nil {
@@ -37,6 +40,7 @@ func (t *FetchTool) Execute(ctx context.Context, input map[string]any) (map[stri
 	}, nil
 }
 
+// buildMockBody generates dummy HTML-like content for a simulated URL.
 func buildMockBody(url string) string {
 	parts := strings.Split(strings.Trim(url, "/"), "/")
 	topic := "this topic"
