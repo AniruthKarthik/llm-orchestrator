@@ -6,7 +6,7 @@ import (
 	"net/http"
 )
 
-// WriteJSON sends a JSON response with the specified status code.
+// WriteJSON serialises v as JSON and writes it to w with the given HTTP status code. It always sets Content-Type to application/json.
 func WriteJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -15,12 +15,12 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 	}
 }
 
-// WriteError sends a JSON error response with a simple message.
+// WriteError writes a structured JSON error body.
 func WriteError(w http.ResponseWriter, status int, msg string) {
 	WriteJSON(w, status, map[string]string{"error": msg})
 }
 
-// DecodeJSON reads the request body and decodes it into the provided destination.
+// DecodeJSON reads exactly one JSON value from r into dst. Returns an error if the body is empty, malformed, or contains unknown fields.
 func DecodeJSON(r *http.Request, dst any) error {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
@@ -30,7 +30,7 @@ func DecodeJSON(r *http.Request, dst any) error {
 	return nil
 }
 
-// StrictUnmarshal validates that data is proper JSON before unmarshaling it.
+// StrictUnmarshal unmarshals b into dst and returns an error if b is not valid JSON.
 func StrictUnmarshal(b []byte, dst any) error {
 	if !json.Valid(b) {
 		return fmt.Errorf("response is not valid JSON")

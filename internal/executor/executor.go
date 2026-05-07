@@ -27,6 +27,7 @@ type Executor struct {
 	retriever *memory.Retriever
 	orch      *orchestrator.Orchestrator
 	obs       *observability.Obs
+	dlq       queue.DeadLetterQueue
 }
 
 // New creates a new Executor with the necessary store, queue, tool registry, memory, and observability bundle.
@@ -47,8 +48,12 @@ func New(
 		tools:     toolMap,
 		retriever: retriever,
 		obs:       obs,
+		dlq:       queue.NewMemoryDLQ(),
 	}
 }
+
+// SetDLQ replaced the dead-letter queue implementation
+func (e *Executor) SetDLQ(dlq queue.DeadLetterQueue) { e.dlq = dlq }
 
 // SetOrchestrator sets the orchestrator for the executor to publish events.
 func (e *Executor) SetOrchestrator(o *orchestrator.Orchestrator) {
@@ -153,6 +158,13 @@ func (e *Executor) Run(ctx context.Context, task models.Task) {
 		span.SetError(execErr)
 		e.obs.Metrics.RecordTaskDuration(spanCtx, task.Type, elapsed, false)
 		e.failTask(spanCtx, task, execErr.Error())
+
+		if e.dlq != nil {
+			if dlqErr := queue.SendToDLQ(spanCtx, e.dlq, task, execErr.Error()); dlqErr != nil {
+				e.obs.Log.Warn(spanCtx, "executor: DLQ send failed", observability.F("error", dlqErr.Error()))
+			}
+		}
+
 		e.publishEvent(orchestrator.EventTaskFailed, task.JobID, task.ID)
 		return
 	}

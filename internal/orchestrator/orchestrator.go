@@ -211,11 +211,11 @@ func (o *Orchestrator) computePhase(job *models.Job) jobPhase {
 		}
 	}
 
-	if !allTerminal {
-		return phaseRunning
-	}
 	if anyFailed {
 		return phaseFailed
+	}
+	if !allTerminal {
+		return phaseRunning
 	}
 	return phaseCompleted
 }

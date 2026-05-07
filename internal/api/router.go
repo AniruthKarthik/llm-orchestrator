@@ -9,7 +9,7 @@ import (
 )
 
 // NewRouter constructs the HTTP mux and applies middleware.
-func NewRouter(h *Handler) http.Handler {
+func NewRouter(h *Handler, rl *RateLimiter) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("POST /job", h.CreateJob)
@@ -23,8 +23,16 @@ func NewRouter(h *Handler) http.Handler {
 		}
 	})
 	mux.HandleFunc("GET /metrics", h.GetMetrics)
+	mux.HandleFunc("GET /dlq", h.GetDLQ)
+	mux.HandleFunc("GET /health", HealthHandler)
+	mux.HandleFunc("GET /ready", ReadyHandler(h.readyCheck()))
 
-	return loggingMiddleware(mux, h.obs)
+	var handler http.Handler = mux
+	handler = loggingMiddleware(handler, h.obs)
+	handler = RateLimitMiddleware(handler, rl, h.obs)
+	handler = RecoveryMiddleware(handler, h.obs)
+
+	return handler
 }
 
 // loggingMiddleware wraps an http.Handler to provide request logging and tracing.

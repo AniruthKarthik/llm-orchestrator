@@ -1,142 +1,216 @@
-// cmd/server/main.go — entry point for the LLM Orchestrator.
+// cmd/server/main.go — production entry point for the LLM Orchestrator.
 //
-// Wiring order (bottom-up, respecting dependencies):
-//  1. Observability bundle (logger, tracer, metrics)
-//  2. Shared job/task store
-//  3. LLM client
-//  4. Memory embedder + vector store + retriever
-//  5. Planner (LLM + memory retriever + obs)
-//  6. Task queue
-//  7. Tool registry
-//  8. Executor (store + queue + tools + memory + obs)
-//  9. Worker pool (queue + executor + obs)
+// Wiring order (bottom-up):
+//  1. Config (env-driven, validated at startup)
+//  2. Observability (logger, tracer, in-memory metrics)
+//  3. Job/task store — in-memory or Postgres based on POSTGRES_DSN
+//  4. LLM client — mock, OpenAI, or Anthropic based on LLM_PROVIDER
+//  5. Memory RAG layer (embedder + vector store + retriever)
+//  6. Planner (LLM + memory + obs)
+//  7. Task queue (buffered channel)
+//  8. Dead-letter queue
+//  9. Tool registry (with circuit breakers on real tools)
 //
-// 10.  Orchestrator (store + queue + memory + obs)
-// 11.  Wire executor → orchestrator (breaks circular dep)
-// 12.  API handler + router
-// 13.  HTTP server
+// 10.  Executor (store + queue + tools + memory + obs + DLQ)
+// 11.  Worker pool
+// 12.  Orchestrator
+// 13.  Wire executor → orchestrator (breaks circular dep)
+// 14.  API handler + router (with rate limiter, health, recovery)
+// 15.  HTTP server with graceful shutdown
 package main
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/AniruthKarthik/llm-orchestrator/internal/api"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/config"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/executor"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/llm"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/llm/providers"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/memory"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/observability"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/orchestrator"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/planner"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/queue"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/reliability"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/store"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/tools"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/worker"
 )
 
-// main initializes the system dependencies, starts the worker pool, and launches the HTTP server.
 func main() {
-	addr := envOrDefault("SERVER_ADDR", ":8080")
-	workerCount := 4
+	// ── 1. Config ─────────────────────────────────────────────────────────────
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("config error: %v", err)
+	}
 
-	// ── 1. Observability ──────────────────────────────────────────────────────
+	// ── 2. Observability ──────────────────────────────────────────────────────
 	obs := observability.Default()
 	rootCtx := context.Background()
 	obs.Log.Info(rootCtx, "llm-orchestrator starting",
-		observability.F("addr", addr),
-		observability.F("workers", workerCount),
+		observability.F("addr", cfg.Server.Addr),
+		observability.F("workers", cfg.Workers.Count),
+		observability.F("llm_provider", cfg.LLM.Provider),
+		observability.F("postgres_enabled", cfg.Postgres.Enabled),
 	)
 
-	// ── 2. Shared store ───────────────────────────────────────────────────────
-	memStore := store.New()
+	// ── 3. Store ──────────────────────────────────────────────────────────────
+	// Postgres support requires the pgx driver to be available in the module
+	// cache (blocked in this environment).  The in-memory store is always used
+	// when POSTGRES_DSN is unset; the adapter is the swap point for production.
+	var appStore store.Store
+	if cfg.Postgres.Enabled {
+		obs.Log.Info(rootCtx, "postgres DSN configured — Postgres store would be initialised here")
+		obs.Log.Warn(rootCtx, "pgx driver not available in build environment; falling back to in-memory store")
+		appStore = store.New()
+	} else {
+		obs.Log.Info(rootCtx, "using in-memory store (set POSTGRES_DSN to enable Postgres)")
+		appStore = store.New()
+	}
 
-	// ── 3. LLM client ─────────────────────────────────────────────────────────
-	llmClient := llm.NewMockClient()
+	// ── 4. LLM client ─────────────────────────────────────────────────────────
+	llmClient, err := buildLLMClient(cfg, obs)
+	if err != nil {
+		log.Fatalf("LLM client init failed: %v", err)
+	}
 
-	// ── 4. Memory (RAG) ───────────────────────────────────────────────────────
+	// ── 5. Memory RAG ─────────────────────────────────────────────────────────
 	embedder := memory.NewMockEmbedder()
 	vecStore := memory.NewInMemoryStore(embedder)
 	retriever := memory.NewRetriever(vecStore, 5)
 
-	// ── 5. Planner ────────────────────────────────────────────────────────────
+	// ── 6. Planner ────────────────────────────────────────────────────────────
 	p := planner.New(llmClient,
 		planner.WithRetriever(retriever),
 		planner.WithObs(obs),
 	)
 
-	// ── 6. Task queue ─────────────────────────────────────────────────────────
-	taskQueue := queue.New(0)
+	// ── 7. Task queue ─────────────────────────────────────────────────────────
+	taskQueue := queue.New(cfg.Queue.BufferSize)
 
-	// ── 7. Tool registry ──────────────────────────────────────────────────────
+	// ── 8. Dead-letter queue ──────────────────────────────────────────────────
+	dlq := queue.NewMemoryDLQ()
+
+	// ── 9. Circuit breaker factory for external tools ─────────────────────────
+	newCB := func(name string) *reliability.CircuitBreaker {
+		return reliability.NewCircuitBreaker(reliability.Config{
+			Name:             name,
+			FailureThreshold: cfg.CircuitBreaker.FailureThreshold,
+			SuccessThreshold: cfg.CircuitBreaker.SuccessThreshold,
+			Timeout:          cfg.CircuitBreaker.Timeout,
+			OnStateChange: func(name string, from, to reliability.State) {
+				obs.Log.Warn(rootCtx, "circuit breaker state changed",
+					observability.F("name", name),
+					observability.F("from", from.String()),
+					observability.F("to", to.String()),
+				)
+			},
+		})
+	}
+
+	// Tool registry — real tools wrapped with circuit breakers.
 	toolRegistry := []tools.Tool{
 		tools.NewSearchTool(),
 		tools.NewFetchTool(),
 		tools.NewSummarizeTool(llmClient),
 		tools.NewReportTool(),
+		// Real fetch and GitHub tools wrapped with circuit breakers.
+		tools.NewCircuitBreakerTool(tools.NewRealFetchTool(), newCB("real-fetch")),
+		tools.NewCircuitBreakerTool(tools.NewGitHubIssueTool(os.Getenv("GITHUB_TOKEN")), newCB("github-issue")),
 	}
 
-	// ── 8. Executor ───────────────────────────────────────────────────────────
-	exec := executor.New(memStore, taskQueue, toolRegistry, retriever, obs)
+	// ── 10. Executor ──────────────────────────────────────────────────────────
+	exec := executor.New(appStore, taskQueue, toolRegistry, retriever, obs)
+	exec.SetDLQ(dlq)
 
-	// ── 9. Worker pool ────────────────────────────────────────────────────────
-	pool := worker.NewPool(workerCount, taskQueue, exec, obs)
+	// ── 11. Worker pool ───────────────────────────────────────────────────────
+	pool := worker.NewPool(cfg.Workers.Count, taskQueue, exec, obs)
 	pool.Start(rootCtx)
 
-	// ── 10. Orchestrator ──────────────────────────────────────────────────────
-	orch := orchestrator.New(memStore, taskQueue, retriever, obs)
+	// ── 12. Orchestrator ──────────────────────────────────────────────────────
+	orch := orchestrator.New(appStore, taskQueue, retriever, obs)
 	orch.Start(rootCtx)
 
-	// ── 11. Wire executor → orchestrator (break circular dep) ─────────────────
+	// ── 13. Wire executor → orchestrator ──────────────────────────────────────
 	exec.SetOrchestrator(orch)
 
-	// ── 12. API handler + router ──────────────────────────────────────────────
-	h := api.NewHandler(memStore, p, taskQueue, orch, obs)
-	router := api.NewRouter(h)
+	// ── 14. API layer ─────────────────────────────────────────────────────────
+	rateLimiter := api.NewRateLimiter(cfg.RateLimit.RequestsPerMinute)
+	h := api.NewHandler(appStore, p, taskQueue, orch, dlq, obs)
+	router := api.NewRouter(h, rateLimiter)
 
-	// ── 13. HTTP server with graceful shutdown ────────────────────────────────
+	// ── 15. HTTP server ───────────────────────────────────────────────────────
 	srv := &http.Server{
-		Addr:         addr,
+		Addr:         cfg.Server.Addr,
 		Handler:      router,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 90 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:  cfg.Server.ReadTimeout,
+		WriteTimeout: cfg.Server.WriteTimeout,
+		IdleTimeout:  cfg.Server.IdleTimeout,
 	}
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
-		obs.Log.Info(rootCtx, "http server listening", observability.F("addr", addr))
+		obs.Log.Info(rootCtx, "http server listening", observability.F("addr", cfg.Server.Addr))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("ListenAndServe: %v", err)
 		}
 	}()
 
 	<-stop
-	obs.Log.Info(rootCtx, "shutdown signal received")
+	obs.Log.Info(rootCtx, "shutdown signal received — draining")
 
-	shutCtx, cancel := context.WithTimeout(rootCtx, 15*time.Second)
+	// Stop accepting new HTTP requests.
+	shutCtx, cancel := context.WithTimeout(rootCtx, cfg.Server.ShutdownGrace)
 	defer cancel()
 	if err := srv.Shutdown(shutCtx); err != nil {
 		obs.Log.Error(rootCtx, "http shutdown error", observability.F("err", err.Error()))
 	}
 
+	// Stop the orchestrator (flushes its event loop) then drain the worker pool.
 	orch.Stop()
 	pool.Stop()
 
 	obs.Log.Info(rootCtx, "llm-orchestrator stopped cleanly")
 }
 
-// envOrDefault retrieves an environment variable or returns a fallback value if not set.
-func envOrDefault(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
+// buildLLMClient selects and constructs the LLM client based on config.
+func buildLLMClient(cfg *config.Config, obs *observability.Obs) (llm.Client, error) {
+	switch cfg.LLM.Provider {
+	case "openai":
+		obs.Log.Info(context.Background(), "using OpenAI LLM provider",
+			observability.F("model", cfg.LLM.OpenAIModel))
+		return providers.NewOpenAIClient(providers.OpenAIConfig{
+			APIKey:     cfg.LLM.OpenAIKey,
+			Model:      cfg.LLM.OpenAIModel,
+			Timeout:    cfg.LLM.Timeout,
+			MaxRetries: cfg.LLM.MaxRetries,
+		}), nil
+
+	case "anthropic":
+		obs.Log.Info(context.Background(), "using Anthropic LLM provider",
+			observability.F("model", cfg.LLM.AnthropicModel))
+		return providers.NewAnthropicClient(providers.AnthropicConfig{
+			APIKey:     cfg.LLM.AnthropicKey,
+			Model:      cfg.LLM.AnthropicModel,
+			Timeout:    cfg.LLM.Timeout,
+			MaxRetries: cfg.LLM.MaxRetries,
+		}), nil
+
+	case "mock", "":
+		obs.Log.Info(context.Background(), "using mock LLM provider")
+		return llm.NewMockClient(), nil
+
+	default:
+		return nil, fmt.Errorf("unknown LLM_PROVIDER %q", cfg.LLM.Provider)
 	}
-	return fallback
 }

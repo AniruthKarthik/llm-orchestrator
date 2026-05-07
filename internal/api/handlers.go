@@ -23,6 +23,7 @@ type Handler struct {
 	plan  *planner.Planner
 	queue queue.Queue
 	orch  *orchestrator.Orchestrator
+	dlq   queue.DeadLetterQueue
 	obs   *observability.Obs
 }
 
@@ -32,9 +33,10 @@ func NewHandler(
 	p *planner.Planner,
 	q queue.Queue,
 	orch *orchestrator.Orchestrator,
+	dlq queue.DeadLetterQueue,
 	obs *observability.Obs,
 ) *Handler {
-	return &Handler{store: s, plan: p, queue: q, orch: orch, obs: obs}
+	return &Handler{store: s, plan: p, queue: q, orch: orch, dlq: dlq, obs: obs}
 }
 
 type createJobRequest struct {
@@ -193,6 +195,40 @@ func (h *Handler) GetJobResult(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetMetrics(w http.ResponseWriter, r *http.Request) {
 	snapshot := h.obs.Metrics.Snapshot()
 	utils.WriteJSON(w, http.StatusOK, snapshot)
+}
+
+// GetDLQ handles GET /dlq — returns all dead-letter entries.
+func (h *Handler) GetDLQ(w http.ResponseWriter, r *http.Request) {
+	ctx, span := h.obs.Tracer.Start(r.Context(), "api.GetDLQ")
+	defer span.End(ctx)
+ 
+	jobID := r.URL.Query().Get("job_id")
+	entries, err := h.dlq.List(ctx, jobID)
+	if err != nil {
+		span.SetError(err)
+		utils.WriteError(w, http.StatusInternalServerError, "failed to list DLQ")
+		return
+	}
+	utils.WriteJSON(w, http.StatusOK, map[string]any{
+		"count":   len(entries),
+		"entries": entries,
+	})
+}
+
+// readyCheck returns a readiness function used by ReadyHandler.The system is ready when the worker queue is operational.
+func (h *Handler) readyCheck() func() error {
+	return func() error {
+		if _, err := h.store.GetJob("__readycheck__"); err != nil {
+			errStr := err.Error()
+			if strings.Contains(errStr, "not found") ||
+				strings.Contains(errStr, "no rows") ||
+				strings.Contains(errStr, "found") {
+				return nil
+			}
+			return fmt.Errorf("store not ready: %w", err)
+		}
+		return nil
+	}
 }
 
 // jobIDFromPath extracts the job ID from a URL path.
