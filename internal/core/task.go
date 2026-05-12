@@ -1,6 +1,10 @@
 package core
 
-import "time"
+import (
+	"errors"
+	"fmt"
+	"time"
+)
 
 type TaskStatus string
 
@@ -33,6 +37,12 @@ func NewTask(
 	input map[string]any,
 	dependencies []string,
 ) *Task {
+	if input == nil {
+		input = make(map[string]any)
+	}
+	if dependencies == nil {
+		dependencies = []string{}
+	}
 	newtask := &Task{
 		ID:           id,
 		Name:         name,
@@ -42,33 +52,50 @@ func NewTask(
 		Status:       TaskPending,
 		Error:        "",
 		CreatedAt:    time.Now(),
+		Output:       make(map[string]any),
 	}
 
 	return newtask
 }
 
-func (t *Task) Start() {
+func (t *Task) Start() error {
+	if t.Status != TaskPending {
+		return fmt.Errorf("cannot start task in %s status", t.Status)
+	}
 	t.Status = TaskRunning
 	t.StartedAt = time.Now()
+	return nil
 }
 
-func (t *Task) Complete(output map[string]any) {
+func (t *Task) Complete(output map[string]any) error {
+	if t.Status != TaskRunning {
+		return fmt.Errorf("cannot complete task in %s status", t.Status)
+	}
+	if output == nil {
+		output = make(map[string]any)
+	}
 	t.Output = output
 	t.Status = TaskCompleted
 	t.FinishedAt = time.Now()
+	return nil
 }
 
-func (t *Task) Fail(err error) {
-	t.Error = "task failed"
+func (t *Task) Fail(err error) error {
+	if t.Status == TaskCompleted || t.Status == TaskFailed {
+		return fmt.Errorf("cannot fail task in %s status", t.Status)
+	}
+	if err != nil {
+		t.Error = err.Error()
+	} else {
+		t.Error = "unknown error"
+	}
 	t.Status = TaskFailed
 	t.FinishedAt = time.Now()
+	return nil
 }
 
 func (t *Task) IsFinished() bool {
-	if t.Status == TaskCompleted {
-		return true
-	}
-	return false
+	return t.Status == TaskCompleted || t.Status == TaskFailed
 }
 
 func (t *Task) CanRun(completed map[string]bool) bool {
