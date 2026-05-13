@@ -1,8 +1,8 @@
 package core
 
 import (
-	"errors"
 	"fmt"
+	"sync"
 	"time"
 )
 
@@ -28,6 +28,8 @@ type Task struct {
 	FinishedAt  time.Time
 
 	Dependencies []string
+
+	mu sync.RWMutex
 }
 
 func NewTask(
@@ -59,6 +61,9 @@ func NewTask(
 }
 
 func (t *Task) Start() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	if t.Status != TaskPending {
 		return fmt.Errorf("cannot start task in %s status", t.Status)
 	}
@@ -68,6 +73,9 @@ func (t *Task) Start() error {
 }
 
 func (t *Task) Complete(output map[string]any) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	if t.Status != TaskRunning {
 		return fmt.Errorf("cannot complete task in %s status", t.Status)
 	}
@@ -81,6 +89,9 @@ func (t *Task) Complete(output map[string]any) error {
 }
 
 func (t *Task) Fail(err error) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
 	if t.Status == TaskCompleted || t.Status == TaskFailed {
 		return fmt.Errorf("cannot fail task in %s status", t.Status)
 	}
@@ -95,10 +106,14 @@ func (t *Task) Fail(err error) error {
 }
 
 func (t *Task) IsFinished() bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	return t.Status == TaskCompleted || t.Status == TaskFailed
 }
 
 func (t *Task) CanRun(completed map[string]bool) bool {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 	for _, depId := range t.Dependencies {
 		if !completed[depId] {
 			return false
@@ -107,3 +122,10 @@ func (t *Task) CanRun(completed map[string]bool) bool {
 
 	return true
 }
+
+func (t *Task) GetStatus() TaskStatus {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.Status
+}
+

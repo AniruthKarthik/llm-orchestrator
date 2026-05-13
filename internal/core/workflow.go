@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"sync"
 	"time"
 )
 
@@ -25,6 +26,8 @@ type Workflow struct {
 	CreatedAt  time.Time
 	StartedAt  *time.Time
 	FinishedAt *time.Time
+
+	mu sync.RWMutex
 }
 
 func NewWorkflow(
@@ -45,6 +48,9 @@ func NewWorkflow(
 }
 
 func (w *Workflow) AddTask(task *Task) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	if task == nil {
 		return errors.New("task is nil")
 	}
@@ -59,6 +65,9 @@ func (w *Workflow) AddTask(task *Task) error {
 }
 
 func (w *Workflow) GetTask(id string) (*Task, error) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
 	task, exists := w.Tasks[id]
 	if !exists {
 		return nil, errors.New("task not found")
@@ -68,36 +77,48 @@ func (w *Workflow) GetTask(id string) (*Task, error) {
 }
 
 func (w *Workflow) Start() {
-	w.Status = WorkflowPending
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.Status = WorkflowRunning
 	t := time.Now()
 	w.StartedAt = &t
 }
 
 func (w *Workflow) Complete() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	w.Status = WorkflowCompleted
 	t := time.Now()
 	w.FinishedAt = &t
 }
 
 func (w *Workflow) Fail() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	w.Status = WorkflowFailed
 	t := time.Now()
 	w.FinishedAt = &t
 }
 
 func (w *Workflow) ReadyTasks() []*Task {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
 	var ready []*Task
 
 	completed := make(map[string]bool)
 
 	for _, task := range w.Tasks {
-		if task.Status == TaskCompleted {
+		if task.GetStatus() == TaskCompleted {
 			completed[task.ID] = true
 		}
 	}
 
 	for _, task := range w.Tasks {
-		if task.Status == TaskPending {
+		if task.GetStatus() != TaskPending {
 			continue
 		}
 
@@ -110,8 +131,11 @@ func (w *Workflow) ReadyTasks() []*Task {
 }
 
 func (w *Workflow) AllTasksFinished() bool {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
 	for _, task := range w.Tasks {
-		if task.Status != TaskCompleted {
+		if !task.IsFinished() {
 			return false
 		}
 	}
@@ -120,11 +144,29 @@ func (w *Workflow) AllTasksFinished() bool {
 }
 
 func (w *Workflow) HasFailures() bool {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
 	for _, task := range w.Tasks {
-		if task.Status == TaskFailed {
+		if task.GetStatus() == TaskFailed {
 			return true
 		}
 	}
 
 	return false
 }
+
+func (w *Workflow) GetTasks() map[string]*Task {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	tasks := make(map[string]*Task, len(w.Tasks))
+	for k, v := range w.Tasks {
+		tasks[k] = v
+	}
+
+	return tasks
+}
+
+
+
