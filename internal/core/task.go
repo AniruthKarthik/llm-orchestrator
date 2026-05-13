@@ -39,25 +39,31 @@ func NewTask(
 	input map[string]any,
 	dependencies []string,
 ) *Task {
-	if input == nil {
-		input = make(map[string]any)
+	// Copy input map to avoid external mutation
+	inputCopy := make(map[string]any)
+	if input != nil {
+		for k, v := range input {
+			inputCopy[k] = v
+		}
 	}
-	if dependencies == nil {
-		dependencies = []string{}
+
+	// Copy dependencies slice to avoid external mutation
+	depsCopy := make([]string, 0)
+	if dependencies != nil {
+		depsCopy = append(depsCopy, dependencies...)
 	}
-	newtask := &Task{
+
+	return &Task{
 		ID:           id,
 		Name:         name,
 		Description:  desc,
-		Input:        input,
-		Dependencies: dependencies,
+		Input:        inputCopy,
+		Dependencies: depsCopy,
 		Status:       TaskPending,
 		Error:        "",
 		CreatedAt:    time.Now(),
 		Output:       make(map[string]any),
 	}
-
-	return newtask
 }
 
 func (t *Task) Start() error {
@@ -79,10 +85,15 @@ func (t *Task) Complete(output map[string]any) error {
 	if t.Status != TaskRunning {
 		return fmt.Errorf("cannot complete task in %s status", t.Status)
 	}
-	if output == nil {
-		output = make(map[string]any)
+
+	// Copy output map to avoid external mutation
+	t.Output = make(map[string]any)
+	if output != nil {
+		for k, v := range output {
+			t.Output[k] = v
+		}
 	}
-	t.Output = output
+
 	t.Status = TaskCompleted
 	t.FinishedAt = time.Now()
 	return nil
@@ -127,5 +138,27 @@ func (t *Task) GetStatus() TaskStatus {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return t.Status
+}
+
+func (t *Task) GetOutput() map[string]any {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	outputCopy := make(map[string]any)
+	for k, v := range t.Output {
+		outputCopy[k] = v
+	}
+	return outputCopy
+}
+
+func (t *Task) GetInput() map[string]any {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	inputCopy := make(map[string]any)
+	for k, v := range t.Input {
+		inputCopy[k] = v
+	}
+	return inputCopy
 }
 

@@ -76,31 +76,46 @@ func (w *Workflow) GetTask(id string) (*Task, error) {
 	return task, nil
 }
 
-func (w *Workflow) Start() {
+func (w *Workflow) Start() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+
+	if w.Status != WorkflowPending {
+		return errors.New("cannot start workflow that is not pending")
+	}
 
 	w.Status = WorkflowRunning
 	t := time.Now()
 	w.StartedAt = &t
+	return nil
 }
 
-func (w *Workflow) Complete() {
+func (w *Workflow) Complete() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+
+	if w.Status != WorkflowRunning {
+		return errors.New("cannot complete workflow that is not running")
+	}
 
 	w.Status = WorkflowCompleted
 	t := time.Now()
 	w.FinishedAt = &t
+	return nil
 }
 
-func (w *Workflow) Fail() {
+func (w *Workflow) Fail() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+
+	if w.Status == WorkflowCompleted || w.Status == WorkflowFailed {
+		return errors.New("cannot fail workflow that is already finished")
+	}
 
 	w.Status = WorkflowFailed
 	t := time.Now()
 	w.FinishedAt = &t
+	return nil
 }
 
 func (w *Workflow) ReadyTasks() []*Task {

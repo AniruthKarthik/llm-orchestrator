@@ -7,17 +7,21 @@ import (
 
 	"github.com/AniruthKarthik/llm-orchestrator/internal/core"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/dag"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/events"
 )
 
 type Executor struct {
 	registry *WorkerRegistry
+	eventBus *events.EventBus
 }
 
 func NewExecutor(
 	registry *WorkerRegistry,
+	eventBus *events.EventBus,
 ) *Executor {
 	return &Executor{
 		registry: registry,
+		eventBus: eventBus,
 	}
 }
 
@@ -26,29 +30,82 @@ func (e *Executor) ExecuteWorkflow(
 	workflow *core.Workflow,
 	plan *dag.ExecutionPlan,
 ) error {
-	workflow.Start()
+	if err := workflow.Start(); err != nil {
+		return err
+	}
+
+	e.eventBus.Publish(events.NewEvent(
+		events.WorkflowStarted,
+		workflow.ID,
+		"",
+		nil,
+	))
 
 	execCtx := NewExecutionContext(workflow.ID)
 
 	for _, stage := range plan.Stages {
 		select {
 		case <-ctx.Done():
-			workflow.Fail()
+			_ = workflow.Fail()
+
+			e.eventBus.Publish(events.NewEvent(
+				events.WorkflowFailed,
+				workflow.ID,
+				"",
+				map[string]any{
+					"error": ctx.Err().Error(),
+				},
+			))
+
 			return ctx.Err()
+
 		default:
 		}
 
-		result := e.executeStage(ctx, workflow, stage, execCtx)
+		result := e.executeStage(
+			ctx,
+			workflow,
+			stage,
+			execCtx,
+		)
+
 		if !result.Success {
-			workflow.Fail()
+			_ = workflow.Fail()
+
+			var err error
+
 			if len(result.Errors) > 0 {
-				return result.Errors[0]
+				err = result.Errors[0]
+			} else {
+				err = fmt.Errorf(
+					"stage %d failed",
+					stage.Level,
+				)
 			}
-			return fmt.Errorf("stage %d failed", stage.Level)
+
+			e.eventBus.Publish(events.NewEvent(
+				events.WorkflowFailed,
+				workflow.ID,
+				"",
+				map[string]any{
+					"error": err.Error(),
+				},
+			))
+
+			return err
 		}
 	}
 
-	workflow.Complete()
+	if err := workflow.Complete(); err != nil {
+		return err
+	}
+
+	e.eventBus.Publish(events.NewEvent(
+		events.WorkflowCompleted,
+		workflow.ID,
+		"",
+		nil,
+	))
 
 	return nil
 }
@@ -59,25 +116,46 @@ func (e *Executor) executeStage(
 	stage dag.ExecutionStage,
 	execCtx *ExecutionContext,
 ) StageResult {
+	e.eventBus.Publish(events.NewEvent(
+		events.StageStarted,
+		workflow.ID,
+		"",
+		map[string]any{
+			"stage_level": stage.Level,
+		},
+	))
+
 	var wg sync.WaitGroup
-	resChan := make(chan TaskResult, len(stage.TaskIDs))
+
+	resChan := make(
+		chan TaskResult,
+		len(stage.TaskIDs),
+	)
 
 	for _, taskID := range stage.TaskIDs {
 		task, err := workflow.GetTask(taskID)
+
 		if err != nil {
 			resChan <- TaskResult{
 				TaskID:  taskID,
 				Success: false,
 				Error:   err,
 			}
+
 			continue
 		}
 
 		wg.Add(1)
+
 		go func(t *core.Task) {
 			defer wg.Done()
 
-			res := e.executeTask(ctx, execCtx, t)
+			res := e.executeTask(
+				ctx,
+				execCtx,
+				t,
+			)
+
 			resChan <- res
 		}(task)
 	}
@@ -87,14 +165,37 @@ func (e *Executor) executeStage(
 
 	var results []TaskResult
 	var errors []error
+
 	success := true
 
 	for res := range resChan {
 		results = append(results, res)
+
 		if !res.Success {
 			success = false
 			errors = append(errors, res.Error)
 		}
+	}
+
+	if success {
+		e.eventBus.Publish(events.NewEvent(
+			events.StageCompleted,
+			workflow.ID,
+			"",
+			map[string]any{
+				"stage_level": stage.Level,
+			},
+		))
+	} else {
+		e.eventBus.Publish(events.NewEvent(
+			events.StageFailed,
+			workflow.ID,
+			"",
+			map[string]any{
+				"stage_level": stage.Level,
+				"errors":      errors,
+			},
+		))
 	}
 
 	return StageResult{
@@ -110,10 +211,32 @@ func (e *Executor) executeTask(
 	execCtx *ExecutionContext,
 	task *core.Task,
 ) TaskResult {
+	e.eventBus.Publish(events.NewEvent(
+		events.TaskStarted,
+		execCtx.WorkflowID,
+		task.ID,
+		nil,
+	))
+
 	worker, exists := e.registry.Get(task.Name)
+
 	if !exists {
-		err := fmt.Errorf("worker not found for task '%s'", task.Name)
+		err := fmt.Errorf(
+			"worker not found for task '%s'",
+			task.Name,
+		)
+
 		task.Fail(err)
+
+		e.eventBus.Publish(events.NewEvent(
+			events.TaskFailed,
+			execCtx.WorkflowID,
+			task.ID,
+			map[string]any{
+				"error": err.Error(),
+			},
+		))
+
 		return TaskResult{
 			TaskID:  task.ID,
 			Success: false,
@@ -122,6 +245,15 @@ func (e *Executor) executeTask(
 	}
 
 	if err := task.Start(); err != nil {
+		e.eventBus.Publish(events.NewEvent(
+			events.TaskFailed,
+			execCtx.WorkflowID,
+			task.ID,
+			map[string]any{
+				"error": err.Error(),
+			},
+		))
+
 		return TaskResult{
 			TaskID:  task.ID,
 			Success: false,
@@ -129,29 +261,61 @@ func (e *Executor) executeTask(
 		}
 	}
 
-	// Create a channel to catch the result of worker execution
 	type workerResult struct {
 		output map[string]any
 		err    error
 	}
-	workerResChan := make(chan workerResult, 1)
+
+	workerResChan := make(
+		chan workerResult,
+		1,
+	)
 
 	go func() {
-		output, err := worker.Execute(ctx, execCtx, task)
-		workerResChan <- workerResult{output, err}
+		output, err := worker.Execute(
+			ctx,
+			execCtx,
+			task,
+		)
+
+		workerResChan <- workerResult{
+			output,
+			err,
+		}
 	}()
 
 	select {
 	case <-ctx.Done():
 		task.Fail(ctx.Err())
+
+		e.eventBus.Publish(events.NewEvent(
+			events.TaskFailed,
+			execCtx.WorkflowID,
+			task.ID,
+			map[string]any{
+				"error": ctx.Err().Error(),
+			},
+		))
+
 		return TaskResult{
 			TaskID:  task.ID,
 			Success: false,
 			Error:   ctx.Err(),
 		}
+
 	case res := <-workerResChan:
 		if res.err != nil {
 			task.Fail(res.err)
+
+			e.eventBus.Publish(events.NewEvent(
+				events.TaskFailed,
+				execCtx.WorkflowID,
+				task.ID,
+				map[string]any{
+					"error": res.err.Error(),
+				},
+			))
+
 			return TaskResult{
 				TaskID:  task.ID,
 				Success: false,
@@ -160,6 +324,16 @@ func (e *Executor) executeTask(
 		}
 
 		task.Complete(res.output)
+
+		e.eventBus.Publish(events.NewEvent(
+			events.TaskCompleted,
+			execCtx.WorkflowID,
+			task.ID,
+			map[string]any{
+				"output": res.output,
+			},
+		))
+
 		return TaskResult{
 			TaskID:  task.ID,
 			Success: true,
@@ -167,5 +341,3 @@ func (e *Executor) executeTask(
 		}
 	}
 }
-
-
