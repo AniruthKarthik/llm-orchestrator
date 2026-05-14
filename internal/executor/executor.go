@@ -18,6 +18,9 @@ type Executor struct {
 	pluginRegistry plugin.Registry
 	eventBus       *events.EventBus
 	store          store.Store
+
+	taskMiddlewares     []TaskMiddleware
+	workflowMiddlewares []WorkflowMiddleware
 }
 
 func NewExecutor(
@@ -26,11 +29,21 @@ func NewExecutor(
 	store store.Store,
 ) *Executor {
 	return &Executor{
-		registry:       registry,
-		pluginRegistry: plugin.NewDefaultRegistry(),
-		eventBus:       eventBus,
-		store:          store,
+		registry:            registry,
+		pluginRegistry:      plugin.NewDefaultRegistry(),
+		eventBus:            eventBus,
+		store:               store,
+		taskMiddlewares:     make([]TaskMiddleware, 0),
+		workflowMiddlewares: make([]WorkflowMiddleware, 0),
 	}
+}
+
+func (e *Executor) UseTaskMiddleware(m ...TaskMiddleware) {
+	e.taskMiddlewares = append(e.taskMiddlewares, m...)
+}
+
+func (e *Executor) UseWorkflowMiddleware(m ...WorkflowMiddleware) {
+	e.workflowMiddlewares = append(e.workflowMiddlewares, m...)
 }
 
 func (e *Executor) WithPluginRegistry(r plugin.Registry) *Executor {
@@ -39,6 +52,13 @@ func (e *Executor) WithPluginRegistry(r plugin.Registry) *Executor {
 }
 
 func (e *Executor) Execute(
+	workflow *core.Workflow,
+) error {
+	handler := ApplyWorkflowMiddleware(e.execute, e.workflowMiddlewares...)
+	return handler(workflow)
+}
+
+func (e *Executor) execute(
 	workflow *core.Workflow,
 ) error {
 	if err := e.store.SaveWorkflow(
@@ -210,7 +230,8 @@ func (e *Executor) executeTask(
 		}
 	}
 
-	output, err := retryWorker.Execute(ctx, execCtx, task)
+	handler := ApplyTaskMiddleware(retryWorker.Execute, e.taskMiddlewares...)
+	output, err := handler(ctx, execCtx, task)
 
 	// Execution Interceptors (After)
 	for _, p := range e.pluginRegistry.List(plugin.PluginTypeObserver) {
