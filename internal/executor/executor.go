@@ -89,6 +89,13 @@ func (e *Executor) Execute(
 
 		for err := range errChan {
 			if err != nil {
+				wfFailurePolicy := workflow.GetFailurePolicy()
+
+				if wfFailurePolicy == core.FailurePolicyContinueOnFailure {
+					continue // Ignore error and proceed to the next stage if possible (Wait, DAG validation might prevent this if next tasks depend on it, but execution logic should continue if policy says so).
+					// Actually, if we continue, we shouldn't return err.
+				}
+
 				if failErr := workflow.Fail(); failErr != nil {
 					return fmt.Errorf("failed to fail workflow: %v (original error: %v)", failErr, err)
 				}
@@ -129,6 +136,8 @@ func (e *Executor) executeTask(
 		return err
 	}
 
+	retryWorker := NewRetryWorkerWrapper(worker, e.eventBus)
+
 	if err := task.Start(); err != nil {
 		return err
 	}
@@ -146,7 +155,7 @@ func (e *Executor) executeTask(
 		Timestamp:  time.Now(),
 	})
 
-	output, err := worker.Execute(ctx, execCtx, task)
+	output, err := retryWorker.Execute(ctx, execCtx, task)
 	if err != nil {
 		_ = task.Fail(err)
 		_ = e.store.UpdateTask(
@@ -162,6 +171,12 @@ func (e *Executor) executeTask(
 				"error": err.Error(),
 			},
 		})
+
+		failurePolicy := task.GetFailurePolicy()
+
+		if failurePolicy == core.FailurePolicyContinueOnFailure {
+			return nil // Pretend it succeeded to continue workflow
+		}
 		return err
 	}
 

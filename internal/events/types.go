@@ -8,6 +8,7 @@ const (
 	WorkflowFailed    EventType = "WORKFLOW_FAILED"
 
 	TaskStarted   EventType = "TASK_STARTED"
+	TaskRetried   EventType = "TASK_RETRIED"
 	TaskCompleted EventType = "TASK_COMPLETED"
 	TaskFailed    EventType = "TASK_FAILED"
 

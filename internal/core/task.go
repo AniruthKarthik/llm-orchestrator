@@ -29,6 +29,10 @@ type Task struct {
 
 	Dependencies []string
 
+	RetryPolicy   *RetryPolicy
+	FailurePolicy FailurePolicy
+	Attempt       int
+
 	mu sync.RWMutex
 }
 
@@ -54,16 +58,43 @@ func NewTask(
 	}
 
 	return &Task{
-		ID:           id,
-		Name:         name,
-		Description:  desc,
-		Input:        inputCopy,
-		Dependencies: depsCopy,
-		Status:       TaskPending,
-		Error:        "",
-		CreatedAt:    time.Now(),
-		Output:       make(map[string]any),
+		ID:            id,
+		Name:          name,
+		Description:   desc,
+		Input:         inputCopy,
+		Dependencies:  depsCopy,
+		Status:        TaskPending,
+		Error:         "",
+		CreatedAt:     time.Now(),
+		Output:        make(map[string]any),
+		FailurePolicy: FailurePolicyFailFast,
 	}
+}
+
+func (t *Task) WithRetryPolicy(p RetryPolicy) *Task {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.RetryPolicy = &p
+	return t
+}
+
+func (t *Task) WithFailurePolicy(p FailurePolicy) *Task {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.FailurePolicy = p
+	return t
+}
+
+func (t *Task) GetFailurePolicy() FailurePolicy {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	return t.FailurePolicy
+}
+
+func (t *Task) SetAttempt(attempt int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.Attempt = attempt
 }
 
 func (t *Task) Start() error {

@@ -27,6 +27,8 @@ type Workflow struct {
 	StartedAt  *time.Time
 	FinishedAt *time.Time
 
+	FailurePolicy FailurePolicy
+
 	mu sync.RWMutex
 }
 
@@ -36,15 +38,29 @@ func NewWorkflow(
 	description string,
 ) *Workflow {
 	newWorkflow := &Workflow{
-		ID:          id,
-		Name:        name,
-		Description: description,
-		Status:      WorkflowPending,
-		CreatedAt:   time.Now(),
-		Tasks:       map[string]*Task{},
+		ID:            id,
+		Name:          name,
+		Description:   description,
+		Status:        WorkflowPending,
+		CreatedAt:     time.Now(),
+		Tasks:         map[string]*Task{},
+		FailurePolicy: FailurePolicyFailFast,
 	}
 
 	return newWorkflow
+}
+
+func (w *Workflow) WithFailurePolicy(p FailurePolicy) *Workflow {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.FailurePolicy = p
+	return w
+}
+
+func (w *Workflow) GetFailurePolicy() FailurePolicy {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.FailurePolicy
 }
 
 func (w *Workflow) AddTask(task *Task) error {
