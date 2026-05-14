@@ -6,16 +6,18 @@ import (
 )
 
 type MemoryStore struct {
-	workflows map[string]WorkflowRecord
-	tasks     map[string]map[string]TaskRecord
+	workflows   map[string]WorkflowRecord
+	tasks       map[string]map[string]TaskRecord
+	checkpoints map[string][]CheckpointRecord
 
 	mutex sync.RWMutex
 }
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		workflows: make(map[string]WorkflowRecord),
-		tasks:     make(map[string]map[string]TaskRecord),
+		workflows:   make(map[string]WorkflowRecord),
+		tasks:       make(map[string]map[string]TaskRecord),
+		checkpoints: make(map[string][]CheckpointRecord),
 	}
 }
 
@@ -164,4 +166,24 @@ func (m *MemoryStore) GetWorkflowTasks(
 	}
 
 	return tasks, nil
+}
+
+func (m *MemoryStore) SaveCheckpoint(checkpoint CheckpointRecord) error {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	m.checkpoints[checkpoint.WorkflowID] = append(m.checkpoints[checkpoint.WorkflowID], checkpoint)
+	return nil
+}
+
+func (m *MemoryStore) GetLatestCheckpoint(workflowID string) (CheckpointRecord, error) {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	checkpoints, exists := m.checkpoints[workflowID]
+	if !exists || len(checkpoints) == 0 {
+		return CheckpointRecord{}, fmt.Errorf("no checkpoints found for workflow: %s", workflowID)
+	}
+
+	return checkpoints[len(checkpoints)-1], nil
 }

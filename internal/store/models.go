@@ -35,3 +35,10 @@ type TaskRecord struct {
 	StartedAt  *time.Time
 	FinishedAt *time.Time
 }
+
+// CheckpointRecord represents a saved state of a workflow execution for recovery.
+type CheckpointRecord struct {
+	WorkflowID string
+	StateData  []byte // JSON serialized workflow and task states
+	Timestamp  time.Time
+}

@@ -75,6 +75,10 @@ func (e *Executor) Execute(
 				return err
 			}
 
+			if task.Status == core.TaskCompleted {
+				continue
+			}
+
 			wg.Add(1)
 			go func(t *core.Task) {
 				defer wg.Done()
@@ -86,6 +90,15 @@ func (e *Executor) Execute(
 
 		wg.Wait()
 		close(errChan)
+
+		// Create a checkpoint after each stage
+		if cpData, err := workflow.CreateCheckpoint(); err == nil {
+			_ = e.store.SaveCheckpoint(store.CheckpointRecord{
+				WorkflowID: workflow.ID,
+				StateData:  cpData,
+				Timestamp:  time.Now(),
+			})
+		}
 
 		for err := range errChan {
 			if err != nil {
@@ -120,6 +133,31 @@ func (e *Executor) Execute(
 	}
 
 	return nil
+}
+
+func (e *Executor) Resume(
+	workflowID string,
+) error {
+	record, err := e.store.GetWorkflow(workflowID)
+	if err != nil {
+		return err
+	}
+
+	taskRecords, err := e.store.GetWorkflowTasks(workflowID)
+	if err != nil {
+		return err
+	}
+
+	workflow := store.RecordToWorkflow(record, taskRecords)
+
+	checkpoint, err := e.store.GetLatestCheckpoint(workflowID)
+	if err == nil {
+		if err := workflow.RestoreFromCheckpoint(checkpoint.StateData); err != nil {
+			return fmt.Errorf("failed to restore from checkpoint: %w", err)
+		}
+	}
+
+	return e.Execute(workflow)
 }
 
 func (e *Executor) executeTask(

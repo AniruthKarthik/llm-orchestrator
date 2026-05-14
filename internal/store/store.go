@@ -33,6 +33,14 @@ type Store interface {
 	GetWorkflowTasks(
 		workflowID string,
 	) ([]TaskRecord, error)
+
+	SaveCheckpoint(
+		checkpoint CheckpointRecord,
+	) error
+
+	GetLatestCheckpoint(
+		workflowID string,
+	) (CheckpointRecord, error)
 }
 
 func WorkflowToRecord(
