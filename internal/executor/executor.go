@@ -21,6 +21,8 @@ type Executor struct {
 
 	taskMiddlewares     []TaskMiddleware
 	workflowMiddlewares []WorkflowMiddleware
+
+	concurrencyLimiter *ConcurrencyLimiter
 }
 
 func NewExecutor(
@@ -35,7 +37,13 @@ func NewExecutor(
 		store:               store,
 		taskMiddlewares:     make([]TaskMiddleware, 0),
 		workflowMiddlewares: make([]WorkflowMiddleware, 0),
+		concurrencyLimiter:  NewConcurrencyLimiter(100), // Default limit
 	}
+}
+
+func (e *Executor) WithConcurrencyLimit(limit int) *Executor {
+	e.concurrencyLimiter = NewConcurrencyLimiter(limit)
+	return e
 }
 
 func (e *Executor) UseTaskMiddleware(m ...TaskMiddleware) {
@@ -194,6 +202,11 @@ func (e *Executor) executeTask(
 	workflow *core.Workflow,
 	task *core.Task,
 ) error {
+	if err := e.concurrencyLimiter.Acquire(ctx); err != nil {
+		return err
+	}
+	defer e.concurrencyLimiter.Release()
+
 	worker, exists := e.registry.Get(task.Name)
 	if !exists {
 		err := fmt.Errorf("worker not found: %s", task.Name)
