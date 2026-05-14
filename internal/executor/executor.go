@@ -9,13 +9,15 @@ import (
 	"github.com/AniruthKarthik/llm-orchestrator/internal/core"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/dag"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/events"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/plugin"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/store"
 )
 
 type Executor struct {
-	registry *WorkerRegistry
-	eventBus *events.EventBus
-	store    store.Store
+	registry       *WorkerRegistry
+	pluginRegistry plugin.Registry
+	eventBus       *events.EventBus
+	store          store.Store
 }
 
 func NewExecutor(
@@ -24,10 +26,16 @@ func NewExecutor(
 	store store.Store,
 ) *Executor {
 	return &Executor{
-		registry: registry,
-		eventBus: eventBus,
-		store:    store,
+		registry:       registry,
+		pluginRegistry: plugin.NewDefaultRegistry(),
+		eventBus:       eventBus,
+		store:          store,
 	}
+}
+
+func (e *Executor) WithPluginRegistry(r plugin.Registry) *Executor {
+	e.pluginRegistry = r
+	return e
 }
 
 func (e *Executor) Execute(
@@ -193,7 +201,24 @@ func (e *Executor) executeTask(
 		Timestamp:  time.Now(),
 	})
 
+	// Execution Interceptors (Before)
+	for _, p := range e.pluginRegistry.List(plugin.PluginTypeObserver) {
+		if interceptor, ok := p.(plugin.ExecutionInterceptor); ok {
+			if err := interceptor.BeforeTask(ctx, task); err != nil {
+				return err
+			}
+		}
+	}
+
 	output, err := retryWorker.Execute(ctx, execCtx, task)
+
+	// Execution Interceptors (After)
+	for _, p := range e.pluginRegistry.List(plugin.PluginTypeObserver) {
+		if interceptor, ok := p.(plugin.ExecutionInterceptor); ok {
+			_ = interceptor.AfterTask(ctx, task, output, err)
+		}
+	}
+
 	if err != nil {
 		_ = task.Fail(err)
 		_ = e.store.UpdateTask(
