@@ -182,6 +182,3 @@ func (w *Workflow) GetTasks() map[string]*Task {
 
 	return tasks
 }
-
-
-

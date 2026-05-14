@@ -75,7 +75,6 @@ func (p *TopologicalPlanner) buildAdjacencyList(
 	return adjacency
 }
 
-
 func (p *TopologicalPlanner) collectZeroIndegree(
 	indegree map[string]int,
 	processed map[string]bool,

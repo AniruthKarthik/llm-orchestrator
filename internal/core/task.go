@@ -24,8 +24,8 @@ type Task struct {
 	Status      TaskStatus
 	Error       string
 	CreatedAt   time.Time
-	StartedAt   time.Time
-	FinishedAt  time.Time
+	StartedAt   *time.Time
+	FinishedAt  *time.Time
 
 	Dependencies []string
 
@@ -74,7 +74,8 @@ func (t *Task) Start() error {
 		return fmt.Errorf("cannot start task in %s status", t.Status)
 	}
 	t.Status = TaskRunning
-	t.StartedAt = time.Now()
+	now := time.Now()
+	t.StartedAt = &now
 	return nil
 }
 
@@ -95,7 +96,8 @@ func (t *Task) Complete(output map[string]any) error {
 	}
 
 	t.Status = TaskCompleted
-	t.FinishedAt = time.Now()
+	now := time.Now()
+	t.FinishedAt = &now
 	return nil
 }
 
@@ -112,7 +114,8 @@ func (t *Task) Fail(err error) error {
 		t.Error = "unknown error"
 	}
 	t.Status = TaskFailed
-	t.FinishedAt = time.Now()
+	now := time.Now()
+	t.FinishedAt = &now
 	return nil
 }
 
@@ -151,14 +154,28 @@ func (t *Task) GetOutput() map[string]any {
 	return outputCopy
 }
 
-func (t *Task) GetInput() map[string]any {
+func (t *Task) GetError() string {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
-
-	inputCopy := make(map[string]any)
-	for k, v := range t.Input {
-		inputCopy[k] = v
-	}
-	return inputCopy
+	return t.Error
 }
 
+func (t *Task) GetStartedAt() *time.Time {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.StartedAt == nil {
+		return nil
+	}
+	cp := *t.StartedAt
+	return &cp
+}
+
+func (t *Task) GetFinishedAt() *time.Time {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+	if t.FinishedAt == nil {
+		return nil
+	}
+	cp := *t.FinishedAt
+	return &cp
+}

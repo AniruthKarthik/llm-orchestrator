@@ -6,12 +6,12 @@ import (
 
 func TestWorkflow_ReadyTasks(t *testing.T) {
 	w := NewWorkflow("w1", "test", "")
-	
+
 	t1 := NewTask("t1", "task 1", "", nil, nil)
 	t2 := NewTask("t2", "task 2", "", nil, []string{"t1"})
 	t3 := NewTask("t3", "task 3", "", nil, []string{"t1"})
 	t4 := NewTask("t4", "task 4", "", nil, []string{"t2", "t3"})
-	
+
 	w.AddTask(t1)
 	w.AddTask(t2)
 	w.AddTask(t3)
@@ -32,7 +32,7 @@ func TestWorkflow_ReadyTasks(t *testing.T) {
 	if len(ready) != 2 {
 		t.Errorf("expected 2 tasks to be ready, got %d", len(ready))
 	}
-	
+
 	foundT2, foundT3 := false, false
 	for _, task := range ready {
 		if task.ID == "t2" {

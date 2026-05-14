@@ -126,4 +126,3 @@ func (v *Validator) detectCycleDFS(
 
 	return false
 }
-

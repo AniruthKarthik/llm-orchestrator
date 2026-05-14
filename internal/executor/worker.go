@@ -15,7 +15,6 @@ type Worker interface {
 	) (map[string]any, error)
 }
 
-
 type WorkerRegistry struct {
 	workers map[string]Worker
 	mu      sync.RWMutex
@@ -45,4 +44,3 @@ func (r *WorkerRegistry) Get(
 	w, exists := r.workers[taskName]
 	return w, exists
 }
-
