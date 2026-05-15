@@ -1,0 +1,19 @@
+package providers
+
+import (
+	"context"
+)
+
+type Provider interface {
+	Generate(
+		ctx context.Context,
+		request GenerateRequest,
+	) (*GenerateResponse, error)
+
+	Stream(
+		ctx context.Context,
+		request GenerateRequest,
+	) (<-chan StreamChunk, <-chan error)
+
+	Name() string
+}
