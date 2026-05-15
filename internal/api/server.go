@@ -29,10 +29,19 @@ func (s *Server) Routes() http.Handler {
 	return mux
 }
 
+type TaskRequest struct {
+	ID           string         `json:"id"`
+	Name         string         `json:"name"`
+	Description  string         `json:"description"`
+	Input        map[string]any `json:"input"`
+	Dependencies []string       `json:"dependencies"`
+}
+
 type CreateWorkflowRequest struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	ID          string        `json:"id"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	Tasks       []TaskRequest `json:"tasks"`
 }
 
 func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
@@ -46,6 +55,15 @@ func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.SaveWorkflow(store.WorkflowToRecord(workflow)); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	for _, tr := range req.Tasks {
+		task := core.NewTask(tr.ID, tr.Name, tr.Description, tr.Input, tr.Dependencies)
+		_ = workflow.AddTask(task)
+		if err := s.store.SaveTask(store.TaskToRecord(workflow.ID, task)); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
 
 	w.WriteHeader(http.StatusCreated)
