@@ -56,67 +56,59 @@ type TaskQueue interface {
 
 // MemoryTaskQueue is a thread-safe in-memory priority queue.
 type MemoryTaskQueue struct {
-	pq    PriorityQueue
-	mutex sync.Mutex
-	cond  *sync.Cond
+	pq     PriorityQueue
+	mutex  sync.Mutex
+	notify chan struct{}
 }
 
 func NewMemoryTaskQueue() *MemoryTaskQueue {
 	mq := &MemoryTaskQueue{
-		pq: make(PriorityQueue, 0),
+		pq:     make(PriorityQueue, 0),
+		notify: make(chan struct{}, 1),
 	}
-	mq.cond = sync.NewCond(&mq.mutex)
 	heap.Init(&mq.pq)
 	return mq
 }
 
 func (q *MemoryTaskQueue) Push(task *QueuedTask) error {
 	q.mutex.Lock()
-	defer q.mutex.Unlock()
 	heap.Push(&q.pq, task)
-	q.cond.Signal()
+	q.mutex.Unlock()
+
+	// Notify a waiting consumer
+	select {
+	case q.notify <- struct{}{}:
+	default:
+	}
 	return nil
 }
 
 func (q *MemoryTaskQueue) Pop(ctx context.Context) (*QueuedTask, error) {
-	// We need a way to interrupt sync.Cond.Wait() with context.
-	// A common pattern is to use a channel or a goroutine, but that's expensive.
-	// For production-grade, we can use a loop with a timeout or a separate channel for signals.
-	
-	q.mutex.Lock()
-	defer q.mutex.Unlock()
-
-	for q.pq.Len() == 0 {
-		// This is tricky with sync.Cond.
-		// One way is to spawn a goroutine that waits on the cond and sends to a channel.
-		
-		waitChan := make(chan struct{})
-		go func() {
-			q.mutex.Lock()
-			for q.pq.Len() == 0 {
-				q.cond.Wait()
-			}
+	for {
+		q.mutex.Lock()
+		if q.pq.Len() > 0 {
+			item := heap.Pop(&q.pq).(*QueuedTask)
+			hasMore := q.pq.Len() > 0
 			q.mutex.Unlock()
-			close(waitChan)
-		}()
 
+			if hasMore {
+				// Signal another consumer if there are more items
+				select {
+				case q.notify <- struct{}{}:
+				default:
+				}
+			}
+			return item, nil
+		}
 		q.mutex.Unlock()
+
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-waitChan:
-			q.mutex.Lock()
-			// Re-check len because multiple workers might have woken up
-			if q.pq.Len() > 0 {
-				item := heap.Pop(&q.pq).(*QueuedTask)
-				return item, nil
-			}
-			// If pq is empty again, continue loop (will re-wait)
+		case <-q.notify:
+			// Loop again to check the queue
 		}
 	}
-
-	item := heap.Pop(&q.pq).(*QueuedTask)
-	return item, nil
 }
 
 

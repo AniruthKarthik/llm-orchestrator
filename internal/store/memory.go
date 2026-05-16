@@ -142,7 +142,7 @@ func (m *MemoryStore) GetTask(
 		)
 	}
 
-	return task, nil
+	return deepCopyTask(task), nil
 }
 
 func (m *MemoryStore) GetWorkflowTasks(
@@ -162,10 +162,31 @@ func (m *MemoryStore) GetWorkflowTasks(
 	tasks := make([]TaskRecord, 0, len(workflowTasks))
 
 	for _, task := range workflowTasks {
-		tasks = append(tasks, task)
+		tasks = append(tasks, deepCopyTask(task))
 	}
 
 	return tasks, nil
+}
+
+func deepCopyTask(t TaskRecord) TaskRecord {
+	cp := t
+	if t.Input != nil {
+		cp.Input = make(map[string]any)
+		for k, v := range t.Input {
+			cp.Input[k] = v
+		}
+	}
+	if t.Output != nil {
+		cp.Output = make(map[string]any)
+		for k, v := range t.Output {
+			cp.Output[k] = v
+		}
+	}
+	if t.Dependencies != nil {
+		cp.Dependencies = make([]string, len(t.Dependencies))
+		copy(cp.Dependencies, t.Dependencies)
+	}
+	return cp
 }
 
 func (m *MemoryStore) SaveCheckpoint(checkpoint CheckpointRecord) error {

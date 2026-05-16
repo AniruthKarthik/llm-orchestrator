@@ -116,10 +116,14 @@ func (e *Executor) execute(
 	for _, stage := range plan.Stages {
 		var wg sync.WaitGroup
 		errChan := make(chan error, len(stage.TaskIDs))
+		
+		// Use a stage-specific context that we can cancel if a task fails
+		stageCtx, stageCancel := context.WithCancel(ctx)
 
 		for _, taskID := range stage.TaskIDs {
 			task, err := workflow.GetTask(taskID)
 			if err != nil {
+				stageCancel()
 				return err
 			}
 
@@ -130,45 +134,52 @@ func (e *Executor) execute(
 			wg.Add(1)
 			go func(t *core.Task) {
 				defer wg.Done()
-				if err := e.executeTask(ctx, execCtx, workflow, t); err != nil {
+				if err := e.executeTask(stageCtx, execCtx, workflow, t); err != nil {
 					errChan <- err
+					// If we should fail fast, cancel other tasks in this stage
+					if workflow.GetFailurePolicy() != core.FailurePolicyContinueOnFailure {
+						stageCancel()
+					}
 				}
 			}(task)
 		}
 
 		wg.Wait()
 		close(errChan)
+		stageCancel() // Clean up stage resources
 
-		// Create a checkpoint after each stage
+		var stageErr error
+		for err := range errChan {
+			if err != nil {
+				stageErr = err
+				break // We just need the first error to decide what to do
+			}
+		}
+
+		if stageErr != nil {
+			wfFailurePolicy := workflow.GetFailurePolicy()
+			if wfFailurePolicy == core.FailurePolicyContinueOnFailure {
+				continue
+			}
+
+			if failErr := workflow.Fail(); failErr != nil {
+				return fmt.Errorf("failed to fail workflow: %v (original error: %v)", failErr, stageErr)
+			}
+
+			_ = e.store.UpdateWorkflow(
+				store.WorkflowToRecord(workflow),
+			)
+
+			return stageErr
+		}
+
+		// Create a checkpoint after each successful stage
 		if cpData, err := workflow.CreateCheckpoint(); err == nil {
 			_ = e.store.SaveCheckpoint(store.CheckpointRecord{
 				WorkflowID: workflow.ID,
 				StateData:  cpData,
 				Timestamp:  time.Now(),
 			})
-		}
-
-		for err := range errChan {
-			if err != nil {
-				cancel() // Cancel other tasks in this stage
-				wfFailurePolicy := workflow.GetFailurePolicy()
-
-
-				if wfFailurePolicy == core.FailurePolicyContinueOnFailure {
-					continue // Ignore error and proceed to the next stage if possible (Wait, DAG validation might prevent this if next tasks depend on it, but execution logic should continue if policy says so).
-					// Actually, if we continue, we shouldn't return err.
-				}
-
-				if failErr := workflow.Fail(); failErr != nil {
-					return fmt.Errorf("failed to fail workflow: %v (original error: %v)", failErr, err)
-				}
-
-				_ = e.store.UpdateWorkflow(
-					store.WorkflowToRecord(workflow),
-				)
-
-				return err
-			}
 		}
 	}
 
