@@ -6,8 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
-
-	"github.com/AniruthKarthik/llm-orchestrator/internal/providers"
 )
 
 type Client struct {
@@ -52,12 +50,13 @@ func (c *Client) Post(
 	req.Header.Set("Content-Type", "application/json")
 
 	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer"+c.apiKey)
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
 
 	for key, val := range headers {
 		req.Header.Set(key, val)
 	}
+
 
 	resp, err := c.httpClient.Do(req)
 

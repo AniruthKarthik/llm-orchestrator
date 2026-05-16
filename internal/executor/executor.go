@@ -23,6 +23,7 @@ type Executor struct {
 	workflowMiddlewares []WorkflowMiddleware
 
 	concurrencyLimiter *ConcurrencyLimiter
+	mu                 sync.RWMutex
 }
 
 func NewExecutor(
@@ -47,10 +48,14 @@ func (e *Executor) WithConcurrencyLimit(limit int) *Executor {
 }
 
 func (e *Executor) UseTaskMiddleware(m ...TaskMiddleware) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.taskMiddlewares = append(e.taskMiddlewares, m...)
 }
 
 func (e *Executor) UseWorkflowMiddleware(m ...WorkflowMiddleware) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.workflowMiddlewares = append(e.workflowMiddlewares, m...)
 }
 
@@ -62,18 +67,25 @@ func (e *Executor) WithPluginRegistry(r plugin.Registry) *Executor {
 func (e *Executor) Execute(
 	workflow *core.Workflow,
 ) error {
-	handler := ApplyWorkflowMiddleware(e.execute, e.workflowMiddlewares...)
+	e.mu.RLock()
+	middlewares := e.workflowMiddlewares
+	e.mu.RUnlock()
+	handler := ApplyWorkflowMiddleware(e.execute, middlewares...)
 	return handler(workflow)
 }
 
 func (e *Executor) execute(
 	workflow *core.Workflow,
 ) error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	if err := e.store.SaveWorkflow(
 		store.WorkflowToRecord(workflow),
 	); err != nil {
 		return err
 	}
+
 
 	for _, task := range workflow.GetTasks() {
 		if err := e.store.SaveTask(
@@ -118,7 +130,7 @@ func (e *Executor) execute(
 			wg.Add(1)
 			go func(t *core.Task) {
 				defer wg.Done()
-				if err := e.executeTask(context.Background(), execCtx, workflow, t); err != nil {
+				if err := e.executeTask(ctx, execCtx, workflow, t); err != nil {
 					errChan <- err
 				}
 			}(task)
@@ -138,7 +150,9 @@ func (e *Executor) execute(
 
 		for err := range errChan {
 			if err != nil {
+				cancel() // Cancel other tasks in this stage
 				wfFailurePolicy := workflow.GetFailurePolicy()
+
 
 				if wfFailurePolicy == core.FailurePolicyContinueOnFailure {
 					continue // Ignore error and proceed to the next stage if possible (Wait, DAG validation might prevent this if next tasks depend on it, but execution logic should continue if policy says so).
@@ -243,8 +257,13 @@ func (e *Executor) executeTask(
 		}
 	}
 
-	handler := ApplyTaskMiddleware(retryWorker.Execute, e.taskMiddlewares...)
+	e.mu.RLock()
+	middlewares := e.taskMiddlewares
+	e.mu.RUnlock()
+
+	handler := ApplyTaskMiddleware(retryWorker.Execute, middlewares...)
 	output, err := handler(ctx, execCtx, task)
+
 
 	// Execution Interceptors (After)
 	for _, p := range e.pluginRegistry.List(plugin.PluginTypeObserver) {

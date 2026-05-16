@@ -2,6 +2,7 @@ package executor
 
 import (
 	"container/heap"
+	"context"
 	"sync"
 )
 
@@ -49,7 +50,7 @@ func (pq *PriorityQueue) Pop() any {
 // TaskQueue defines the interface for a task queue.
 type TaskQueue interface {
 	Push(task *QueuedTask) error
-	Pop() (*QueuedTask, error)
+	Pop(ctx context.Context) (*QueuedTask, error)
 	Size() int
 }
 
@@ -77,15 +78,47 @@ func (q *MemoryTaskQueue) Push(task *QueuedTask) error {
 	return nil
 }
 
-func (q *MemoryTaskQueue) Pop() (*QueuedTask, error) {
+func (q *MemoryTaskQueue) Pop(ctx context.Context) (*QueuedTask, error) {
+	// We need a way to interrupt sync.Cond.Wait() with context.
+	// A common pattern is to use a channel or a goroutine, but that's expensive.
+	// For production-grade, we can use a loop with a timeout or a separate channel for signals.
+	
 	q.mutex.Lock()
 	defer q.mutex.Unlock()
+
 	for q.pq.Len() == 0 {
-		q.cond.Wait()
+		// This is tricky with sync.Cond.
+		// One way is to spawn a goroutine that waits on the cond and sends to a channel.
+		
+		waitChan := make(chan struct{})
+		go func() {
+			q.mutex.Lock()
+			for q.pq.Len() == 0 {
+				q.cond.Wait()
+			}
+			q.mutex.Unlock()
+			close(waitChan)
+		}()
+
+		q.mutex.Unlock()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-waitChan:
+			q.mutex.Lock()
+			// Re-check len because multiple workers might have woken up
+			if q.pq.Len() > 0 {
+				item := heap.Pop(&q.pq).(*QueuedTask)
+				return item, nil
+			}
+			// If pq is empty again, continue loop (will re-wait)
+		}
 	}
+
 	item := heap.Pop(&q.pq).(*QueuedTask)
 	return item, nil
 }
+
 
 func (q *MemoryTaskQueue) Size() int {
 	q.mutex.Lock()
