@@ -15,5 +15,7 @@ type Provider interface {
 		request GenerateRequest,
 	) (<-chan StreamChunk, <-chan error)
 
+	Capabilities() Capabilities
+
 	Name() string
 }

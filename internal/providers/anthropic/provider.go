@@ -1,4 +1,4 @@
-package groq
+package anthropic
 
 import (
 	"context"
@@ -9,49 +9,46 @@ import (
 	"github.com/AniruthKarthik/llm-orchestrator/internal/providers"
 )
 
-type GroqProvider struct {
+type AnthropicProvider struct {
 	client *httpclient.Client
+	apiKey string
 }
 
-func NewGroqProvider(
-	apiKey string,
-) *GroqProvider {
-	return &GroqProvider{
+func NewAnthropicProvider(apiKey string) *AnthropicProvider {
+	return &AnthropicProvider{
 		client: httpclient.NewClient(
-			apiKey,
-			"https://api.groq.com/openai/v1",
+			"", // apiKey is passed via headers instead of Bearer token
+			"https://api.anthropic.com/v1",
 			30*time.Second,
 		),
+		apiKey: apiKey,
 	}
 }
 
-func (p *GroqProvider) Name() string {
-	return "groq"
+func (p *AnthropicProvider) Name() string {
+	return "anthropic"
 }
 
-func (p *GroqProvider) Capabilities() providers.Capabilities {
+func (p *AnthropicProvider) Capabilities() providers.Capabilities {
 	return providers.Capabilities{
 		SupportsTools:     true,
 		SupportsStreaming: true,
-		SupportsVision:    false,
+		SupportsVision:    true,
 	}
 }
 
-func (p *GroqProvider) Stream(
+func (p *AnthropicProvider) Stream(
 	ctx context.Context,
 	request providers.GenerateRequest,
 ) (<-chan providers.StreamChunk, <-chan error) {
 	chunkChan := make(chan providers.StreamChunk)
 	errChan := make(chan error, 1)
 
-	// Minimal implementation: just return an error or a single chunk for now
-	// Real implementation would use p.client.Post with streaming enabled
 	go func() {
 		defer close(chunkChan)
 		defer close(errChan)
-		errChan <- fmt.Errorf("streaming not implemented for groq provider")
+		errChan <- fmt.Errorf("streaming not implemented for anthropic provider")
 	}()
 
 	return chunkChan, errChan
 }
-

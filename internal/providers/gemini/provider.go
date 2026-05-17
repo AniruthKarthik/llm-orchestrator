@@ -1,4 +1,4 @@
-package groq
+package gemini
 
 import (
 	"context"
@@ -9,49 +9,46 @@ import (
 	"github.com/AniruthKarthik/llm-orchestrator/internal/providers"
 )
 
-type GroqProvider struct {
+type GeminiProvider struct {
 	client *httpclient.Client
+	apiKey string
 }
 
-func NewGroqProvider(
-	apiKey string,
-) *GroqProvider {
-	return &GroqProvider{
+func NewGeminiProvider(apiKey string) *GeminiProvider {
+	return &GeminiProvider{
 		client: httpclient.NewClient(
-			apiKey,
-			"https://api.groq.com/openai/v1",
+			"",
+			"https://generativelanguage.googleapis.com/v1beta",
 			30*time.Second,
 		),
+		apiKey: apiKey,
 	}
 }
 
-func (p *GroqProvider) Name() string {
-	return "groq"
+func (p *GeminiProvider) Name() string {
+	return "gemini"
 }
 
-func (p *GroqProvider) Capabilities() providers.Capabilities {
+func (p *GeminiProvider) Capabilities() providers.Capabilities {
 	return providers.Capabilities{
 		SupportsTools:     true,
 		SupportsStreaming: true,
-		SupportsVision:    false,
+		SupportsVision:    true,
 	}
 }
 
-func (p *GroqProvider) Stream(
+func (p *GeminiProvider) Stream(
 	ctx context.Context,
 	request providers.GenerateRequest,
 ) (<-chan providers.StreamChunk, <-chan error) {
 	chunkChan := make(chan providers.StreamChunk)
 	errChan := make(chan error, 1)
 
-	// Minimal implementation: just return an error or a single chunk for now
-	// Real implementation would use p.client.Post with streaming enabled
 	go func() {
 		defer close(chunkChan)
 		defer close(errChan)
-		errChan <- fmt.Errorf("streaming not implemented for groq provider")
+		errChan <- fmt.Errorf("streaming not implemented for gemini provider")
 	}()
 
 	return chunkChan, errChan
 }
-

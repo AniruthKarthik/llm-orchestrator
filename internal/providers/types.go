@@ -21,6 +21,12 @@ type TokenUsage struct {
 	TotalTokens      int
 }
 
+type Capabilities struct {
+	SupportsTools     bool
+	SupportsStreaming bool
+	SupportsVision    bool
+}
+
 type GenerateResponse struct {
 	ID           string
 	Model        string

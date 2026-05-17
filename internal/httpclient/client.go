@@ -49,7 +49,7 @@ func (c *Client) Post(
 
 	req.Header.Set("Content-Type", "application/json")
 
-	if c.apiKey != "" {
+	if c.apiKey != "" && req.Header.Get("Authorization") == "" {
 		req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
 

@@ -20,9 +20,9 @@ This document serves as the master plan for building a distributed AI orchestrat
 - [x] **Migration System**: Integrate a migration tool for schema versioning.
 
 ### 2. Provider Abstraction & Registry
-- [ ] **Normalized Provider Interface**: Design a unified interface for request/response normalization.
-- [ ] **Capability Discovery**: Implement system to discover model capabilities (context size, tool support, etc.).
-- [ ] **Provider Registry**: Support dynamic registration of OpenAI, Anthropic, Gemini, and Ollama.
+- [x] **Normalized Provider Interface**: Design a unified interface for request/response normalization.
+- [x] **Capability Discovery**: Implement system to discover model capabilities (context size, tool support, etc.).
+- [x] **Provider Registry**: Support dynamic registration of OpenAI, Anthropic, Gemini, and Groq.
 
 ### 3. Configuration & Secrets
 - [ ] **Structured Config**: Define configuration structs for server, database, and providers.
