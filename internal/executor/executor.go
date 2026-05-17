@@ -78,7 +78,16 @@ func (e *Executor) execute(
 	workflow *core.Workflow,
 ) error {
 	// Use a workflow-level context that we can cancel if any task fails critically
-	workflowCtx, workflowCancel := context.WithCancel(context.Background())
+	var (
+		workflowCtx    context.Context
+		workflowCancel context.CancelFunc
+	)
+
+	if workflow.Timeout > 0 {
+		workflowCtx, workflowCancel = context.WithTimeout(context.Background(), workflow.Timeout)
+	} else {
+		workflowCtx, workflowCancel = context.WithCancel(context.Background())
+	}
 	defer workflowCancel()
 
 	if err := e.store.SaveWorkflow(
@@ -138,7 +147,16 @@ func (e *Executor) execute(
 			wg.Add(1)
 			go func(t *core.Task) {
 				defer wg.Done()
-				if err := e.executeTask(workflowCtx, execCtx, workflow, t); err != nil {
+
+				// Apply task-specific timeout if set
+				taskCtx := workflowCtx
+				var taskCancel context.CancelFunc
+				if t.Timeout > 0 {
+					taskCtx, taskCancel = context.WithTimeout(workflowCtx, t.Timeout)
+					defer taskCancel()
+				}
+
+				if err := e.executeTask(taskCtx, execCtx, workflow, t); err != nil {
 					errChan <- err
 					// If we should fail fast, cancel the entire workflow
 					if workflow.GetFailurePolicy() != core.FailurePolicyContinueOnFailure {

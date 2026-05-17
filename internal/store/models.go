@@ -14,6 +14,8 @@ type WorkflowRecord struct {
 	CreatedAt  time.Time
 	StartedAt  *time.Time
 	FinishedAt *time.Time
+
+	Timeout time.Duration
 }
 
 type TaskRecord struct {
@@ -34,6 +36,8 @@ type TaskRecord struct {
 	CreatedAt  time.Time
 	StartedAt  *time.Time
 	FinishedAt *time.Time
+
+	Timeout time.Duration
 }
 
 // CheckpointRecord represents a saved state of a workflow execution for recovery.

@@ -33,6 +33,8 @@ type Task struct {
 	FailurePolicy FailurePolicy
 	Attempt       int
 
+	Timeout time.Duration
+
 	mu sync.RWMutex
 }
 

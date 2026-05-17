@@ -23,7 +23,7 @@ func (w *DummyWorker) Execute(ctx context.Context, execCtx *executor.ExecutionCo
 func main() {
 	// Initialize components
 	ms := store.NewMemoryStore()
-	eb := events.NewEventBus()
+	eb := events.NewEventBus(10) // 10 workers for event dispatching
 	wr := executor.NewWorkerRegistry()
 
 	// Register a dummy worker for testing

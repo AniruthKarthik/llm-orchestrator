@@ -58,7 +58,7 @@ func main() {
 
 	// 1. Initialize dependencies
 	registry := executor.NewWorkerRegistry()
-	eventBus := events.NewEventBus()
+	eventBus := events.NewEventBus(5)
 	memoryStore := store.NewMemoryStore()
 
 	// 2. Register worker

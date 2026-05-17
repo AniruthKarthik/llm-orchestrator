@@ -28,6 +28,7 @@ type Workflow struct {
 	FinishedAt *time.Time
 
 	FailurePolicy FailurePolicy
+	Timeout       time.Duration
 
 	mu sync.RWMutex
 }

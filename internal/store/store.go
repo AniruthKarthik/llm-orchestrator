@@ -58,6 +58,7 @@ func WorkflowToRecord(
 		CreatedAt:   workflow.CreatedAt,
 		FinishedAt:  workflow.FinishedAt,
 		StartedAt:   workflow.StartedAt,
+		Timeout:     workflow.Timeout,
 	}
 }
 
@@ -78,6 +79,7 @@ func TaskToRecord(
 		CreatedAt:    task.CreatedAt,
 		StartedAt:    task.StartedAt,
 		FinishedAt:   task.FinishedAt,
+		Timeout:      task.Timeout,
 	}
 }
 
@@ -100,6 +102,7 @@ func RecordToWorkflow(
 			CreatedAt:    task.CreatedAt,
 			StartedAt:    task.StartedAt,
 			FinishedAt:   task.FinishedAt,
+			Timeout:      task.Timeout,
 		}
 	}
 
@@ -112,5 +115,6 @@ func RecordToWorkflow(
 		CreatedAt:   workflow.CreatedAt,
 		StartedAt:   workflow.StartedAt,
 		FinishedAt:  workflow.FinishedAt,
+		Timeout:     workflow.Timeout,
 	}
 }
