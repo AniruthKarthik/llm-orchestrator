@@ -25,8 +25,8 @@ This document serves as the master plan for building a distributed AI orchestrat
 - [x] **Provider Registry**: Support dynamic registration of OpenAI, Anthropic, Gemini, and Groq.
 
 ### 3. Configuration & Secrets
-- [ ] **Structured Config**: Define configuration structs for server, database, and providers.
-- [ ] **Secret Management**: Implement a `SecretManager` for secure API key retrieval (Env, Vault, or AWS Secrets Manager).
+- [x] **Structured Config**: Define configuration structs for server, database, and providers.
+- [x] **Secret Management**: Implement a `SecretManager` for secure API key retrieval (Env, Vault, or AWS Secrets Manager).
 
 ---
 
