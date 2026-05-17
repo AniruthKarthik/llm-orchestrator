@@ -77,15 +77,15 @@ func (e *Executor) Execute(
 func (e *Executor) execute(
 	workflow *core.Workflow,
 ) error {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// Use a workflow-level context that we can cancel if any task fails critically
+	workflowCtx, workflowCancel := context.WithCancel(context.Background())
+	defer workflowCancel()
 
 	if err := e.store.SaveWorkflow(
 		store.WorkflowToRecord(workflow),
 	); err != nil {
 		return err
 	}
-
 
 	for _, task := range workflow.GetTasks() {
 		if err := e.store.SaveTask(
@@ -114,16 +114,20 @@ func (e *Executor) execute(
 	execCtx := NewExecutionContext(workflow.ID)
 
 	for _, stage := range plan.Stages {
+		// Check if workflow was cancelled by a previous stage failure
+		select {
+		case <-workflowCtx.Done():
+			return workflowCtx.Err()
+		default:
+		}
+
 		var wg sync.WaitGroup
 		errChan := make(chan error, len(stage.TaskIDs))
-		
-		// Use a stage-specific context that we can cancel if a task fails
-		stageCtx, stageCancel := context.WithCancel(ctx)
 
 		for _, taskID := range stage.TaskIDs {
 			task, err := workflow.GetTask(taskID)
 			if err != nil {
-				stageCancel()
+				workflowCancel()
 				return err
 			}
 
@@ -134,11 +138,11 @@ func (e *Executor) execute(
 			wg.Add(1)
 			go func(t *core.Task) {
 				defer wg.Done()
-				if err := e.executeTask(stageCtx, execCtx, workflow, t); err != nil {
+				if err := e.executeTask(workflowCtx, execCtx, workflow, t); err != nil {
 					errChan <- err
-					// If we should fail fast, cancel other tasks in this stage
+					// If we should fail fast, cancel the entire workflow
 					if workflow.GetFailurePolicy() != core.FailurePolicyContinueOnFailure {
-						stageCancel()
+						workflowCancel()
 					}
 				}
 			}(task)
@@ -146,7 +150,6 @@ func (e *Executor) execute(
 
 		wg.Wait()
 		close(errChan)
-		stageCancel() // Clean up stage resources
 
 		var stageErr error
 		for err := range errChan {
