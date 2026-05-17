@@ -15,9 +15,9 @@ This document serves as the master plan for building a distributed AI orchestrat
 
 ## Phase 2: Foundation & Persistence
 ### 1. PostgreSQL Persistence
-- [ ] **Database Schema**: Design normalized tables for Workflows, Tasks, Checkpoints, and Events.
-- [ ] **SQL Store**: Implement `internal/store/postgres.go` with connection pooling and transactional integrity.
-- [ ] **Migration System**: Integrate a migration tool for schema versioning.
+- [x] **Database Schema**: Design normalized tables for Workflows, Tasks, Checkpoints, and Events.
+- [x] **SQL Store**: Implement `internal/store/postgres.go` with connection pooling and transactional integrity.
+- [x] **Migration System**: Integrate a migration tool for schema versioning.
 
 ### 2. Provider Abstraction & Registry
 - [ ] **Normalized Provider Interface**: Design a unified interface for request/response normalization.

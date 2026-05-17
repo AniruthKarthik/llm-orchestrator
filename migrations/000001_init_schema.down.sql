@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS checkpoints;
+DROP TABLE IF EXISTS tasks;
+DROP TABLE IF EXISTS workflows;
