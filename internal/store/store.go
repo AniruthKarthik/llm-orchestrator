@@ -65,19 +65,6 @@ func TaskToRecord(
 	workflowID string,
 	task *core.Task,
 ) TaskRecord {
-	dependencies := make([]string, len(task.Dependencies))
-	copy(dependencies, task.Dependencies)
-
-	input := make(map[string]any)
-	for k, v := range task.Input {
-		input[k] = v
-	}
-
-	output := make(map[string]any)
-	for k, v := range task.Output {
-		output[k] = v
-	}
-
 	return TaskRecord{
 		ID:           task.ID,
 		WorkflowID:   workflowID,
@@ -85,9 +72,9 @@ func TaskToRecord(
 		Description:  task.Description,
 		Status:       string(task.Status),
 		Error:        task.Error,
-		Input:        input,
-		Output:       output,
-		Dependencies: dependencies,
+		Input:        core.DeepCopyMap(task.Input),
+		Output:       core.DeepCopyMap(task.Output),
+		Dependencies: core.DeepCopyStringSlice(task.Dependencies),
 		CreatedAt:    task.CreatedAt,
 		StartedAt:    task.StartedAt,
 		FinishedAt:   task.FinishedAt,
@@ -101,28 +88,15 @@ func RecordToWorkflow(
 	runtimeTasks := make(map[string]*core.Task)
 
 	for _, task := range tasks {
-		dependencies := make([]string, len(task.Dependencies))
-		copy(dependencies, task.Dependencies)
-
-		input := make(map[string]any)
-		for k, v := range task.Input {
-			input[k] = v
-		}
-
-		output := make(map[string]any)
-		for k, v := range task.Output {
-			output[k] = v
-		}
-
 		runtimeTasks[task.ID] = &core.Task{
 			ID:           task.ID,
 			Name:         task.Name,
 			Description:  task.Description,
 			Status:       core.TaskStatus(task.Status),
 			Error:        task.Error,
-			Input:        input,
-			Output:       output,
-			Dependencies: dependencies,
+			Input:        core.DeepCopyMap(task.Input),
+			Output:       core.DeepCopyMap(task.Output),
+			Dependencies: core.DeepCopyStringSlice(task.Dependencies),
 			CreatedAt:    task.CreatedAt,
 			StartedAt:    task.StartedAt,
 			FinishedAt:   task.FinishedAt,

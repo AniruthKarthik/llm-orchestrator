@@ -3,6 +3,8 @@ package store
 import (
 	"fmt"
 	"sync"
+
+	"github.com/AniruthKarthik/llm-orchestrator/internal/core"
 )
 
 type MemoryStore struct {
@@ -88,7 +90,7 @@ func (m *MemoryStore) SaveTask(
 		m.tasks[task.WorkflowID] = make(map[string]TaskRecord)
 	}
 
-	m.tasks[task.WorkflowID][task.ID] = task
+	m.tasks[task.WorkflowID][task.ID] = deepCopyTask(task)
 
 	return nil
 }
@@ -114,7 +116,7 @@ func (m *MemoryStore) UpdateTask(
 		)
 	}
 
-	workflowTasks[task.ID] = task
+	workflowTasks[task.ID] = deepCopyTask(task)
 
 	return nil
 }
@@ -170,22 +172,9 @@ func (m *MemoryStore) GetWorkflowTasks(
 
 func deepCopyTask(t TaskRecord) TaskRecord {
 	cp := t
-	if t.Input != nil {
-		cp.Input = make(map[string]any)
-		for k, v := range t.Input {
-			cp.Input[k] = v
-		}
-	}
-	if t.Output != nil {
-		cp.Output = make(map[string]any)
-		for k, v := range t.Output {
-			cp.Output[k] = v
-		}
-	}
-	if t.Dependencies != nil {
-		cp.Dependencies = make([]string, len(t.Dependencies))
-		copy(cp.Dependencies, t.Dependencies)
-	}
+	cp.Input = core.DeepCopyMap(t.Input)
+	cp.Output = core.DeepCopyMap(t.Output)
+	cp.Dependencies = core.DeepCopyStringSlice(t.Dependencies)
 	return cp
 }
 
@@ -193,7 +182,13 @@ func (m *MemoryStore) SaveCheckpoint(checkpoint CheckpointRecord) error {
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	m.checkpoints[checkpoint.WorkflowID] = append(m.checkpoints[checkpoint.WorkflowID], checkpoint)
+	cp := checkpoint
+	if checkpoint.StateData != nil {
+		cp.StateData = make([]byte, len(checkpoint.StateData))
+		copy(cp.StateData, checkpoint.StateData)
+	}
+
+	m.checkpoints[checkpoint.WorkflowID] = append(m.checkpoints[checkpoint.WorkflowID], cp)
 	return nil
 }
 
@@ -206,5 +201,12 @@ func (m *MemoryStore) GetLatestCheckpoint(workflowID string) (CheckpointRecord, 
 		return CheckpointRecord{}, fmt.Errorf("no checkpoints found for workflow: %s", workflowID)
 	}
 
-	return checkpoints[len(checkpoints)-1], nil
+	cp := checkpoints[len(checkpoints)-1]
+	if cp.StateData != nil {
+		dataCopy := make([]byte, len(cp.StateData))
+		copy(dataCopy, cp.StateData)
+		cp.StateData = dataCopy
+	}
+
+	return cp, nil
 }

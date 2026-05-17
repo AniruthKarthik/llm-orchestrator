@@ -43,26 +43,12 @@ func NewTask(
 	input map[string]any,
 	dependencies []string,
 ) *Task {
-	// Copy input map to avoid external mutation
-	inputCopy := make(map[string]any)
-	if input != nil {
-		for k, v := range input {
-			inputCopy[k] = v
-		}
-	}
-
-	// Copy dependencies slice to avoid external mutation
-	depsCopy := make([]string, 0)
-	if dependencies != nil {
-		depsCopy = append(depsCopy, dependencies...)
-	}
-
 	return &Task{
 		ID:            id,
 		Name:          name,
 		Description:   desc,
-		Input:         inputCopy,
-		Dependencies:  depsCopy,
+		Input:         DeepCopyMap(input),
+		Dependencies:  DeepCopyStringSlice(dependencies),
 		Status:        TaskPending,
 		Error:         "",
 		CreatedAt:     time.Now(),
@@ -118,14 +104,7 @@ func (t *Task) Complete(output map[string]any) error {
 		return fmt.Errorf("cannot complete task in %s status", t.Status)
 	}
 
-	// Copy output map to avoid external mutation
-	t.Output = make(map[string]any)
-	if output != nil {
-		for k, v := range output {
-			t.Output[k] = v
-		}
-	}
-
+	t.Output = DeepCopyMap(output)
 	t.Status = TaskCompleted
 	now := time.Now()
 	t.FinishedAt = &now
@@ -178,11 +157,7 @@ func (t *Task) GetOutput() map[string]any {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	outputCopy := make(map[string]any)
-	for k, v := range t.Output {
-		outputCopy[k] = v
-	}
-	return outputCopy
+	return DeepCopyMap(t.Output)
 }
 
 func (t *Task) GetError() string {

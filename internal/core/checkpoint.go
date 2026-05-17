@@ -51,7 +51,7 @@ func (w *Workflow) CreateCheckpoint() ([]byte, error) {
 		data.Tasks[id] = &TaskSnapshot{
 			ID:         task.ID,
 			Status:     task.Status,
-			Output:     task.Output,
+			Output:     DeepCopyMap(task.Output),
 			Error:      task.Error,
 			StartedAt:  task.StartedAt,
 			FinishedAt: task.FinishedAt,
