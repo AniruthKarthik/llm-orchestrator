@@ -8,6 +8,7 @@ import (
 
 	"github.com/AniruthKarthik/llm-orchestrator/internal/core"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/dag"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/distributed"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/events"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/plugin"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/store"
@@ -18,6 +19,7 @@ type Executor struct {
 	pluginRegistry plugin.Registry
 	eventBus       *events.EventBus
 	store          store.Store
+	coordinator    distributed.Coordinator
 
 	taskMiddlewares     []TaskMiddleware
 	workflowMiddlewares []WorkflowMiddleware
@@ -40,6 +42,11 @@ func NewExecutor(
 		workflowMiddlewares: make([]WorkflowMiddleware, 0),
 		concurrencyLimiter:  NewConcurrencyLimiter(100), // Default limit
 	}
+}
+
+func (e *Executor) WithCoordinator(c distributed.Coordinator) *Executor {
+	e.coordinator = c
+	return e
 }
 
 func (e *Executor) WithConcurrencyLimit(limit int) *Executor {

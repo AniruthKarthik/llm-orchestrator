@@ -10,6 +10,7 @@ import (
 	"github.com/AniruthKarthik/llm-orchestrator/internal/api"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/config"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/core"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/distributed"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/events"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/executor"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/providers"
@@ -19,6 +20,7 @@ import (
 	"github.com/AniruthKarthik/llm-orchestrator/internal/providers/openai"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/secrets"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/store"
+	"github.com/redis/go-redis/v9"
 )
 
 type DummyWorker struct{}
@@ -55,7 +57,24 @@ func main() {
 	// 3. Register LLM Providers
 	registerProviders(sm)
 
-	// 4. Initialize Core Components
+	// 4. Initialize Coordination
+	var coord distributed.Coordinator
+	if cfg.Redis.URL != "" {
+		rdb := redis.NewClient(&redis.Options{
+			Addr: cfg.Redis.URL,
+		})
+		// Verify connection
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := rdb.Ping(ctx).Err(); err != nil {
+			log.Printf("Failed to connect to Redis: %v. Distributed coordination will be disabled.", err)
+		} else {
+			log.Println("Connected to Redis successfully.")
+			coord = distributed.NewRedisCoordinator(rdb)
+		}
+	}
+
+	// 5. Initialize Core Components
 	eb := events.NewEventBus(10)
 	wr := executor.NewWorkerRegistry()
 
@@ -63,6 +82,9 @@ func main() {
 	wr.Register("test-task", &DummyWorker{})
 
 	exec := executor.NewExecutor(wr, eb, s)
+	if coord != nil {
+		exec.WithCoordinator(coord)
+	}
 	srv := api.NewServer(exec, s)
 
 	// 5. Start HTTP Server

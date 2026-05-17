@@ -32,10 +32,10 @@ This document serves as the master plan for building a distributed AI orchestrat
 
 ## Phase 3: Distributed Orchestration
 ### 1. Coordination & Consensus
-- [ ] **Redis/Etcd Integration**: Implement distributed coordination foundations.
-- [ ] **Heartbeat & Node Registration**: Active tracking of worker nodes and health status.
-- [ ] **Leader Election**: Implement for scheduling and coordination roles.
-- [ ] **Distributed Leases**: Ensure atomic task ownership and prevent duplicate execution.
+- [x] **Redis/Etcd Integration**: Implement distributed coordination foundations.
+- [x] **Heartbeat & Node Registration**: Active tracking of worker nodes and health status.
+- [x] **Leader Election**: Implement for scheduling and coordination roles.
+- [x] **Distributed Leases**: Ensure atomic task ownership and prevent duplicate execution.
 
 ### 2. Distributed Task Queue
 - [ ] **Task Broker**: Integrate a distributed queue (NATS JetStream or Redis Streams).
