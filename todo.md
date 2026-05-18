@@ -1,6 +1,6 @@
 # LLM Orchestrator: Complete Project Roadmap
 
-This document serves as the master plan for building a distributed AI orchestration runtime. The goal is an execution operating system for intelligent workflows, prioritizing extensibility, provider-agnosticism, and distributed reliability.
+This document serves as the master plan for building a powerful AI orchestration runtime designed for local execution. The goal is an execution operating system for intelligent workflows, prioritizing extensibility, provider-agnosticism, and local reliability.
 
 ---
 
@@ -13,39 +13,18 @@ This document serves as the master plan for building a distributed AI orchestrat
 
 ---
 
-## Phase 2: Foundation & Persistence
-### 1. PostgreSQL Persistence
-- [x] **Database Schema**: Design normalized tables for Workflows, Tasks, Checkpoints, and Events.
-- [x] **SQL Store**: Implement `internal/store/postgres.go` with connection pooling and transactional integrity.
-- [x] **Migration System**: Integrate a migration tool for schema versioning.
-
-### 2. Provider Abstraction & Registry
-- [x] **Normalized Provider Interface**: Design a unified interface for request/response normalization.
-- [x] **Capability Discovery**: Implement system to discover model capabilities (context size, tool support, etc.).
-- [x] **Provider Registry**: Support dynamic registration of OpenAI, Anthropic, Gemini, and Groq.
-
-### 3. Configuration & Secrets
-- [x] **Structured Config**: Define configuration structs for server, database, and providers.
-- [x] **Secret Management**: Implement a `SecretManager` for secure API key retrieval (Env, Vault, or AWS Secrets Manager).
+## Phase 2: Foundation & Persistence - COMPLETED
+- [x] **PostgreSQL Persistence**: SQL Store with connection pooling and migrations.
+- [x] **Provider Abstraction**: Normalized interface for OpenAI, Anthropic, Gemini, and Groq.
+- [x] **Secret Management**: Secure API key retrieval via Env.
+- [x] **Configuration**: Structured config for server and database.
 
 ---
 
-## Phase 3: Distributed Orchestration
-### 1. Coordination & Consensus
-- [x] **Redis/Etcd Integration**: Implement distributed coordination foundations.
-- [x] **Heartbeat & Node Registration**: Active tracking of worker nodes and health status.
-- [x] **Leader Election**: Implement for scheduling and coordination roles.
-- [x] **Distributed Leases**: Ensure atomic task ownership and prevent duplicate execution.
-
-### 2. Distributed Task Queue
-- [ ] **Task Broker**: Integrate a distributed queue (NATS JetStream or Redis Streams).
-- [ ] **Visibility Timeouts**: Automatic task re-queueing on node failure.
-- [ ] **Failover & Reassignment**: Handle node crashes by reassigning active leases.
-
-### 3. Runtime Supervision
+## Phase 3: Runtime Supervision & Recovery
 - [ ] **Stuck-Task Detection**: Detect and recover from non-responsive execution paths.
 - [ ] **Panic Recovery**: Robust recovery and reporting for task-level panics.
-- [ ] **Queue Pressure Management**: Implement backpressure and shedding logic.
+- [ ] **Execution Quality Control**: Ensure generated outputs meet specific schema or quality bars.
 
 ---
 
@@ -62,7 +41,7 @@ This document serves as the master plan for building a distributed AI orchestrat
 ### 3. Shared Artifact System
 - [ ] **Artifact Registry**: Storage and retrieval of text, code, files, and logs.
 - [ ] **Lineage Tracking**: Track artifact ownership and versioning across tasks.
-- [ ] **Persistence & Retrieval**: Integration with object storage (S3/GCS) for large artifacts.
+- [ ] **Persistence & Retrieval**: Integration with object storage (S3/GCS) or local storage for large artifacts.
 
 ### 4. Memory System
 - [ ] **Memory Abstraction**: Pluggable system for short-term and long-term memory.
@@ -111,17 +90,16 @@ This document serves as the master plan for building a distributed AI orchestrat
 
 ## Phase 7: Observability & Deployment
 ### 1. Monitoring & Tracing
-- [ ] **OpenTelemetry Integration**: Distributed tracing for stages, tasks, and tool calls.
+- [ ] **OpenTelemetry Integration**: Tracing for stages, tasks, and tool calls.
 - [ ] **Prometheus Metrics**: Token usage, cost tracking, failure rates, and latency.
 - [ ] **Live Execution Graph**: Real-time visualization of the DAG state.
 
 ### 2. Deployment
-- [ ] **Dockerization**: Multi-stage builds for server and worker nodes.
-- [ ] **Orchestration**: Helm charts or Compose files for distributed deployment.
+- [ ] **Dockerization**: Multi-stage builds for the server.
+- [ ] **Local Setup**: Easy installation scripts for local-first use.
 
 ---
 
 ## Phase 8: Testing & Validation
-- [ ] **Concurrency Stress Tests**: Validate stability under 10k+ concurrent tasks.
-- [ ] **Chaos Engineering**: Validate recovery under database and network failure scenarios.
+- [ ] **Concurrency Stress Tests**: Validate stability under high local load.
 - [ ] **End-to-End Suite**: Comprehensive tests for the full objective-to-completion lifecycle.

@@ -15,16 +15,10 @@ type DatabaseConfig struct {
 	MigrationsPath string
 }
 
-// RedisConfig holds settings for Redis coordination.
-type RedisConfig struct {
-	URL string
-}
-
 // Config is the top-level configuration structure.
 type Config struct {
 	Server   ServerConfig
 	Database DatabaseConfig
-	Redis    RedisConfig
 }
 
 // Load populates the Config struct from environment variables with sensible defaults.
@@ -42,8 +36,6 @@ func Load() *Config {
 		migrationsPath = "migrations"
 	}
 
-	redisURL := os.Getenv("REDIS_URL")
-
 	return &Config{
 		Server: ServerConfig{
 			Port: port,
@@ -51,9 +43,6 @@ func Load() *Config {
 		Database: DatabaseConfig{
 			URL:            dbURL,
 			MigrationsPath: migrationsPath,
-		},
-		Redis: RedisConfig{
-			URL: redisURL,
 		},
 	}
 }
