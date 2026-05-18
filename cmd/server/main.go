@@ -63,6 +63,13 @@ func main() {
 	wr.Register("test-task", &DummyWorker{})
 
 	exec := executor.NewExecutor(wr, eb, s)
+	exec.UseTaskMiddleware(executor.PanicRecoveryMiddleware)
+
+	// 5. Start Supervisor
+	sup := executor.NewSupervisor(s, exec, 30*time.Second)
+	sup.Start()
+	defer sup.Stop()
+
 	srv := api.NewServer(exec, s)
 
 	// 5. Start HTTP Server
