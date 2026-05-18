@@ -1,5 +1,17 @@
 package core
 
+import (
+	"crypto/rand"
+	"fmt"
+)
+
+// NewID generates a random unique identifier.
+func NewID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
+}
+
 // DeepCopyValue recursively copies any value, specifically handling maps and slices.
 func DeepCopyValue(v any) any {
 	switch v := v.(type) {
