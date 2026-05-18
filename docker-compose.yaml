@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: llm_orch
+    ports:
+      - "5432:5432"
+
+  server:
+    build: .
+    environment:
+      SERVER_PORT: ":8080"
+      DATABASE_URL: "postgres://user:password@db:5432/llm_orch?sslmode=disable"
+      MIGRATIONS_PATH: "migrations"
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
