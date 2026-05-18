@@ -13,6 +13,7 @@ import (
 	"github.com/AniruthKarthik/llm-orchestrator/internal/dsl"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/events"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/executor"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/observer"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/providers"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/providers/anthropic"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/providers/gemini"
@@ -130,6 +131,11 @@ func main() {
 	defer sup.Stop()
 
 	// Listen to events
+	auditLogger := observer.NewAuditLogger(memoryStore)
+	eventBus.Subscribe(events.TaskStarted, auditLogger.Handle)
+	eventBus.Subscribe(events.TaskCompleted, auditLogger.Handle)
+	eventBus.Subscribe(events.TaskFailed, auditLogger.Handle)
+
 	eventBus.Subscribe(events.TaskStarted, func(e events.Event) {
 		fmt.Printf("[Orch] Task Started: %s\n", e.TaskID)
 	})

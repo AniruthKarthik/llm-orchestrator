@@ -12,6 +12,7 @@ import (
 	"github.com/AniruthKarthik/llm-orchestrator/internal/core"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/events"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/executor"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/observer"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/agents"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/providers"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/providers/anthropic"
@@ -76,6 +77,12 @@ func main() {
 	sup := executor.NewSupervisor(s, exec, 30*time.Second)
 	sup.Start()
 	defer sup.Stop()
+
+	// Register Audit Logger
+	al := observer.NewAuditLogger(s)
+	eb.Subscribe(events.TaskStarted, al.Handle)
+	eb.Subscribe(events.TaskCompleted, al.Handle)
+	eb.Subscribe(events.TaskFailed, al.Handle)
 
 	srv := api.NewServer(exec, s)
 
