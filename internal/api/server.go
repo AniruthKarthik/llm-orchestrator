@@ -77,6 +77,21 @@ func (s *Server) Routes() http.Handler {
 	// WebSocket
 	mux.HandleFunc("GET /api/v1/ws", s.handleWebSocket)
 
+	// Static UI (production mode — ui/dist must be present)
+	// In dev, the Vite dev server handles the UI; this is skipped when the dir is absent.
+	uiDir := "ui/dist"
+	if _, err := os.Stat(uiDir); err == nil {
+		fs := http.FileServer(http.Dir(uiDir))
+		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+			// Serve the SPA's index.html for all non-file routes (client-side routing)
+			if _, err := os.Stat(uiDir + r.URL.Path); os.IsNotExist(err) {
+				http.ServeFile(w, r, uiDir+"/index.html")
+				return
+			}
+			fs.ServeHTTP(w, r)
+		})
+	}
+
 	return s.loggingMiddleware(s.enableCORS(s.authMiddleware(s.bodyLimitMiddleware(mux))))
 }
 

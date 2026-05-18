@@ -1,26 +1,54 @@
-version: '3.8'
+version: '3.9'
 
 services:
-  db:
-    image: postgres:15-alpine
+  # ─── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
+      POSTGRES_USER: orch
+      POSTGRES_PASSWORD: orch_secret
       POSTGRES_DB: llm_orch
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orch -d llm_orch"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     ports:
-      - "5432:5432"
+      - "5432:5432"   # Expose for local development only; remove in production
 
-  server:
-    build: .
+  # ─── LLM Orchestrator Backend ───────────────────────────────────────────────
+  orchestrator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       SERVER_PORT: ":8080"
-      DATABASE_URL: "postgres://user:password@db:5432/llm_orch?sslmode=disable"
-      MIGRATIONS_PATH: "migrations"
-      GROQ_API_KEY: ${GROQ_API_KEY}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      DATABASE_URL: "postgres://orch:orch_secret@postgres:5432/llm_orch?sslmode=disable"
+      MIGRATIONS_PATH: migrations
+      LOG_LEVEL: info
+      # ALLOWED_ORIGIN: "https://your-frontend-domain.com"  # Restrict in production
+      # API_KEY: "your-long-random-secret-key"              # Enable auth in production
+      # Provider keys — use Docker secrets or env_file in production:
+      GROQ_API_KEY: "${GROQ_API_KEY}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+      GEMINI_API_KEY: "${GEMINI_API_KEY}"
     ports:
       - "8080:8080"
-    depends_on:
-      - db
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/api/v1/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  postgres_data:
+    driver: local
