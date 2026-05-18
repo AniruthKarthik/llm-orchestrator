@@ -278,21 +278,32 @@ func (e *Executor) executeTask(
 
 	var handler TaskHandler
 
-	agentID := task.AgentID
-	if agentID == "" {
+	agentIDs := []string{}
+	if task.AgentID != "" {
+		agentIDs = append(agentIDs, task.AgentID)
+	} else {
 		// Use router to select agent
 		var err error
-		agentID, err = e.router.Route(ctx, task, e.agentRegistry.List())
+		agentIDs, err = e.router.Route(ctx, task, e.agentRegistry.List())
 		if err != nil {
 			return fmt.Errorf("failed to route task: %w", err)
 		}
 	}
 
-	if agentID != "" {
-		// Agent-based execution
+	if len(agentIDs) > 0 {
+		// Agent-based execution with fallback
 		agentExec := agents.NewAgentExecutor(e.agentRegistry)
 		handler = func(ctx context.Context, execCtx *ExecutionContext, t *core.Task) (map[string]any, error) {
-			return agentExec.Execute(ctx, agentID, t)
+			var lastErr error
+			for _, id := range agentIDs {
+				output, err := agentExec.Execute(ctx, id, t)
+				if err == nil {
+					return output, nil
+				}
+				lastErr = err
+				fmt.Printf("[Executor] Fallback: Agent %s failed, trying next... error: %v\n", id, err)
+			}
+			return nil, fmt.Errorf("all agents failed: %w", lastErr)
 		}
 	} else {
 		// Worker-based execution
