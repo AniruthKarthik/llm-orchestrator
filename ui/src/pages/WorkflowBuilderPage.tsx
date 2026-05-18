@@ -231,7 +231,7 @@ export default function WorkflowBuilderPage() {
   };
 
   return (
-    <div className="h-full w-full flex-1 flex flex-col">
+    <div style={{ height: 'calc(100vh - 3rem)' }} className="w-full flex flex-col">
       {/* Top Toolbar */}
       <div className="h-12 border-b border-border bg-card px-4 flex items-center justify-between z-10 shrink-0 shadow-sm">
         <div className="flex items-center gap-2">

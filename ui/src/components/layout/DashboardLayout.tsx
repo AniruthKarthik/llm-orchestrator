@@ -149,7 +149,7 @@ export const DashboardLayout = ({ children }: { children: React.ReactNode }) => 
           </div>
         </header>
 
-        <div className="flex-1 overflow-auto bg-muted/20 flex flex-col relative">
+        <div className="flex-1 overflow-auto bg-muted/20">
           {children}
         </div>
 
