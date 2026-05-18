@@ -78,12 +78,14 @@ func (r *AgentRegistry) List() []*Agent {
 
 // AgentExecutor is responsible for executing tasks using an agent.
 type AgentExecutor struct {
-	registry *AgentRegistry
+	registry         *AgentRegistry
+	artifactRegistry *core.ArtifactRegistry
 }
 
-func NewAgentExecutor(r *AgentRegistry) *AgentExecutor {
+func NewAgentExecutor(r *AgentRegistry, ar *core.ArtifactRegistry) *AgentExecutor {
 	return &AgentExecutor{
-		registry: r,
+		registry:         r,
+		artifactRegistry: ar,
 	}
 }
 
@@ -103,8 +105,28 @@ func (e *AgentExecutor) Execute(ctx context.Context, agentID string, task *core.
 
 		// Prepare messages
 		messages := []providers.Message{}
+		
+		// 1. System Prompt
 		if agent.SystemPrompt != "" {
 			messages = append(messages, providers.Message{Role: "system", Content: agent.SystemPrompt})
+		}
+
+		// 2. Retrieval Injection: Inject relevant artifacts
+		if e.artifactRegistry != nil {
+			artifacts := e.artifactRegistry.ListByWorkflow(task.WorkflowID)
+			if len(artifacts) > 0 {
+				stitcher := NewContextStitcher(4000) // Default limit for example
+				
+				artifactStrings := make([]string, 0, len(artifacts))
+				for _, a := range artifacts {
+					artifactStrings = append(artifactStrings, fmt.Sprintf("- Artifact: %s (Type: %s, From Task: %s)\n  Data: %v", a.Name, a.Type, a.TaskID, a.Data))
+				}
+				
+				contextMsg := "The following artifacts are available from previous tasks in this workflow:\n"
+				contextMsg += stitcher.StitchArtifacts(artifactStrings)
+				
+				messages = append(messages, providers.Message{Role: "system", Content: contextMsg})
+			}
 		}
 		
 		// If task has input prompt

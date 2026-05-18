@@ -72,13 +72,13 @@ This document serves as the master plan for building a powerful AI orchestration
 
 ---
 
-## Phase 6: DSL, DX & Security
+## Phase 6: DSL, DX & Security - IN PROGRESS (MVP Ready)
 ### 1. Workflow DSL
-- [ ] **YAML/JSON Compiler**: Compile declarative definitions into runtime DAGs.
+- [x] **YAML/JSON Compiler**: Compile declarative definitions into runtime DAGs.
 - [ ] **DSL Validation**: Static analysis of workflow definitions (cycles, missing tools, etc.).
 
 ### 2. Developer Experience
-- [ ] **Management CLI (`orchctl`)**: Tools for monitoring, pausing, and resuming workflows.
+- [x] **Management CLI (`orch`)**: Built the `orch` command to run local YAML workflows.
 - [ ] **Client SDKs**: Library support for defining and triggering workflows programmatically.
 
 ### 3. Security

@@ -3,8 +3,8 @@ package groq
 type groqGenerateRequest struct {
 	Model       string        `json:"model"`
 	Messages    []groqMessage `json:"messages"`
-	Temperature float32       `json:"temperature"`
-	MaxTokens   int           `json:"max_tokens"`
+	Temperature float32       `json:"temperature,omitempty"`
+	MaxTokens   int           `json:"max_tokens,omitempty"`
 }
 
 type groqMessage struct {

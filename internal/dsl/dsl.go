@@ -61,7 +61,7 @@ func (c *Compiler) Compile(def *WorkflowDefinition) (*core.Workflow, error) {
 	workflow := core.NewWorkflow(def.ID, def.Name, def.Description)
 
 	for _, td := range def.Tasks {
-		task := core.NewTask(td.ID, td.Name, td.Description, td.Input, td.Dependencies)
+		task := core.NewTask(td.ID, workflow.ID, td.Name, td.Description, td.Input, td.Dependencies)
 		if td.AgentID != "" {
 			task.WithAgentID(td.AgentID)
 		}

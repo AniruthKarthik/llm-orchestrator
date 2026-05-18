@@ -58,7 +58,7 @@ func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, tr := range req.Tasks {
-		task := core.NewTask(tr.ID, tr.Name, tr.Description, tr.Input, tr.Dependencies)
+		task := core.NewTask(tr.ID, workflow.ID, tr.Name, tr.Description, tr.Input, tr.Dependencies)
 		_ = workflow.AddTask(task)
 		if err := s.store.SaveTask(store.TaskToRecord(workflow.ID, task)); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)

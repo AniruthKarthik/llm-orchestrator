@@ -30,7 +30,7 @@ func TestExecutor_AgentExecution(t *testing.T) {
 	e := NewExecutor(wr, ar, art, mem, tr, tp, eb, s)
 
 	// 2. Create a task assigned to the agent
-	task := core.NewTask("t1", "agent-task", "desc", nil, nil).WithAgentID("agent-1")
+	task := core.NewTask("t1", "wf-1", "agent-task", "desc", nil, nil).WithAgentID("agent-1")
 	workflow := &core.Workflow{
 		ID:    "wf-1",
 		Tasks: map[string]*core.Task{"t1": task},

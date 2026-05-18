@@ -13,9 +13,9 @@ func TestTopologicalPlanner_BuildExecutionPlan(t *testing.T) {
 
 	t.Run("Linear dependencies", func(t *testing.T) {
 		wf := core.NewWorkflow("wf1", "Linear Workflow", "")
-		t1 := core.NewTask("t1", "Task 1", "", nil, nil)
-		t2 := core.NewTask("t2", "Task 2", "", nil, []string{"t1"})
-		t3 := core.NewTask("t3", "Task 3", "", nil, []string{"t2"})
+		t1 := core.NewTask("t1", wf.ID, "Task 1", "", nil, nil)
+		t2 := core.NewTask("t2", wf.ID, "Task 2", "", nil, []string{"t1"})
+		t3 := core.NewTask("t3", wf.ID, "Task 3", "", nil, []string{"t2"})
 
 		wf.AddTask(t1)
 		wf.AddTask(t2)
@@ -45,9 +45,9 @@ func TestTopologicalPlanner_BuildExecutionPlan(t *testing.T) {
 
 	t.Run("Parallel dependencies", func(t *testing.T) {
 		wf := core.NewWorkflow("wf2", "Parallel Workflow", "")
-		t1 := core.NewTask("t1", "Task 1", "", nil, nil)
-		t2 := core.NewTask("t2", "Task 2", "", nil, nil)
-		t3 := core.NewTask("t3", "Task 3", "", nil, []string{"t1", "t2"})
+		t1 := core.NewTask("t1", wf.ID, "Task 1", "", nil, nil)
+		t2 := core.NewTask("t2", wf.ID, "Task 2", "", nil, nil)
+		t3 := core.NewTask("t3", wf.ID, "Task 3", "", nil, []string{"t1", "t2"})
 
 		wf.AddTask(t1)
 		wf.AddTask(t2)
@@ -74,11 +74,11 @@ func TestTopologicalPlanner_BuildExecutionPlan(t *testing.T) {
 
 	t.Run("Complex dependencies", func(t *testing.T) {
 		wf := core.NewWorkflow("wf3", "Complex Workflow", "")
-		t1 := core.NewTask("t1", "Task 1", "", nil, nil)
-		t2 := core.NewTask("t2", "Task 2", "", nil, []string{"t1"})
-		t3 := core.NewTask("t3", "Task 3", "", nil, []string{"t1"})
-		t4 := core.NewTask("t4", "Task 4", "", nil, []string{"t2", "t3"})
-		t5 := core.NewTask("t5", "Task 5", "", nil, nil)
+		t1 := core.NewTask("t1", wf.ID, "Task 1", "", nil, nil)
+		t2 := core.NewTask("t2", wf.ID, "Task 2", "", nil, []string{"t1"})
+		t3 := core.NewTask("t3", wf.ID, "Task 3", "", nil, []string{"t1"})
+		t4 := core.NewTask("t4", wf.ID, "Task 4", "", nil, []string{"t2", "t3"})
+		t5 := core.NewTask("t5", wf.ID, "Task 5", "", nil, nil)
 
 		wf.AddTask(t1)
 		wf.AddTask(t2)

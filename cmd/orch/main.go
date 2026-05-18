@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/AniruthKarthik/llm-orchestrator/internal/agents"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/config"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/core"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/dsl"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/events"
@@ -58,6 +59,9 @@ func (p *DummyProvider) Generate(ctx context.Context, req providers.GenerateRequ
 }
 
 func main() {
+	// 1. Load Configuration (this also loads .env)
+	_ = config.Load()
+
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: orch <workflow.yaml>")
 		os.Exit(1)
@@ -110,7 +114,7 @@ func main() {
 		ID:           "comedian-1",
 		Name:         "Golang Comedian",
 		Role:         agents.RoleExecutor,
-		Model:        "llama3-8b-8192", // Groq default model
+		Model:        "llama-3.1-8b-instant", // Updated from decommissioned llama3-8b-8192
 		Provider:     "groq",
 		SystemPrompt: "You are a witty stand-up comedian. You must output your response as valid JSON with a single key 'joke' containing your joke string.",
 	})
@@ -145,4 +149,5 @@ func main() {
 	}
 
 	fmt.Println("Execution completed successfully!")
+	time.Sleep(100 * time.Millisecond)
 }

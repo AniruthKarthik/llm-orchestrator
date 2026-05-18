@@ -80,7 +80,7 @@ func (p *Planner) CompilePlan(plan *ExecutionPlan) *core.Workflow {
 	workflow := core.NewWorkflow(plan.WorkflowID, plan.Name, plan.Description)
 	
 	for _, pt := range plan.Tasks {
-		task := core.NewTask(pt.ID, pt.Name, pt.Description, pt.Input, pt.Dependencies)
+		task := core.NewTask(pt.ID, workflow.ID, pt.Name, pt.Description, pt.Input, pt.Dependencies)
 		if pt.AgentID != "" {
 			task.WithAgentID(pt.AgentID)
 		}

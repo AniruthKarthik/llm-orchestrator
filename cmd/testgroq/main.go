@@ -86,8 +86,8 @@ func main() {
 	// 3. Build workflow
 	workflow := core.NewWorkflow("wf-groq-test", "Groq Integration Test", "Verifying Groq provider integration")
 	
-	taskA := core.NewTask("task-1", "llm", "Explain orchestration systems", map[string]any{
-		"model":  "llama3-8b-8192", // Common Groq model
+	taskA := core.NewTask("task-1", workflow.ID, "llm", "Explain orchestration systems", map[string]any{
+		"model":  "llama-3.1-8b-instant", // Common Groq model
 		"prompt": "Explain orchestration systems in 2 sentences.",
 	}, nil)
 	

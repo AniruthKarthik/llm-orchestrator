@@ -13,7 +13,7 @@ func TestOutputValidationMiddleware(t *testing.T) {
 		"score": "int",
 		"name":  "string",
 	}
-	task := core.NewTask("t1", "test", "desc", nil, nil).WithOutputSchema(schema)
+	task := core.NewTask("t1", "wf-1", "test", "desc", nil, nil).WithOutputSchema(schema)
 
 	// 2. Create a handler that returns valid output
 	validHandler := func(ctx context.Context, execCtx *ExecutionContext, task *core.Task) (map[string]any, error) {

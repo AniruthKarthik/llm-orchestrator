@@ -45,8 +45,8 @@ func TestAgentExecutor(t *testing.T) {
 	}
 	registry.Register(agent)
 
-	executor := NewAgentExecutor(registry)
-	task := core.NewTask("t1", "test-task", "desc", nil, nil)
+	executor := NewAgentExecutor(registry, nil)
+	task := core.NewTask("t1", "test-wf", "test-task", "desc", nil, nil)
 
 	output, err := executor.Execute(context.Background(), "agent-1", task)
 	if err != nil {

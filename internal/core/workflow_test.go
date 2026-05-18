@@ -7,10 +7,10 @@ import (
 func TestWorkflow_ReadyTasks(t *testing.T) {
 	w := NewWorkflow("w1", "test", "")
 
-	t1 := NewTask("t1", "task 1", "", nil, nil)
-	t2 := NewTask("t2", "task 2", "", nil, []string{"t1"})
-	t3 := NewTask("t3", "task 3", "", nil, []string{"t1"})
-	t4 := NewTask("t4", "task 4", "", nil, []string{"t2", "t3"})
+	t1 := NewTask("t1", w.ID, "task 1", "", nil, nil)
+	t2 := NewTask("t2", w.ID, "task 2", "", nil, []string{"t1"})
+	t3 := NewTask("t3", w.ID, "task 3", "", nil, []string{"t1"})
+	t4 := NewTask("t4", w.ID, "task 4", "", nil, []string{"t2", "t3"})
 
 	w.AddTask(t1)
 	w.AddTask(t2)

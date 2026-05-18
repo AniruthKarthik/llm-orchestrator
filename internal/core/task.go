@@ -17,6 +17,7 @@ const (
 
 type Task struct {
 	ID          string
+	WorkflowID  string
 	Name        string
 	Description string
 	Input       map[string]any
@@ -49,6 +50,7 @@ func (t *Task) WithAgentID(id string) *Task {
 
 func NewTask(
 	id string,
+	workflowID string,
 	name string,
 	desc string,
 	input map[string]any,
@@ -56,6 +58,7 @@ func NewTask(
 ) *Task {
 	return &Task{
 		ID:            id,
+		WorkflowID:    workflowID,
 		Name:          name,
 		Description:   desc,
 		Input:         DeepCopyMap(input),

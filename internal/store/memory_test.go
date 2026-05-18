@@ -62,7 +62,7 @@ func TestCoreTask_DeepCopy(t *testing.T) {
 			"key": "val",
 		},
 	}
-	task := core.NewTask("t1", "name", "desc", input, nil)
+	task := core.NewTask("t1", "w1", "name", "desc", input, nil)
 
 	// Mutate input
 	input["nested"].(map[string]any)["key"] = "changed"

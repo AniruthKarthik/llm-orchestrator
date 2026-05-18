@@ -12,8 +12,8 @@ func TestValidator_Validate(t *testing.T) {
 
 	t.Run("Valid workflow", func(t *testing.T) {
 		w := core.NewWorkflow("w1", "test", "")
-		t1 := core.NewTask("t1", "task 1", "", nil, nil)
-		t2 := core.NewTask("t2", "task 2", "", nil, []string{"t1"})
+		t1 := core.NewTask("t1", w.ID, "task 1", "", nil, nil)
+		t2 := core.NewTask("t2", w.ID, "task 2", "", nil, []string{"t1"})
 		w.AddTask(t1)
 		w.AddTask(t2)
 
@@ -24,7 +24,7 @@ func TestValidator_Validate(t *testing.T) {
 
 	t.Run("Unknown dependency", func(t *testing.T) {
 		w := core.NewWorkflow("w1", "test", "")
-		t1 := core.NewTask("t1", "task 1", "", nil, []string{"unknown"})
+		t1 := core.NewTask("t1", w.ID, "task 1", "", nil, []string{"unknown"})
 		w.AddTask(t1)
 
 		err := v.Validate(w)
@@ -38,7 +38,7 @@ func TestValidator_Validate(t *testing.T) {
 
 	t.Run("Self dependency", func(t *testing.T) {
 		w := core.NewWorkflow("w1", "test", "")
-		t1 := core.NewTask("t1", "task 1", "", nil, []string{"t1"})
+		t1 := core.NewTask("t1", w.ID, "task 1", "", nil, []string{"t1"})
 		w.AddTask(t1)
 
 		err := v.Validate(w)
@@ -52,8 +52,8 @@ func TestValidator_Validate(t *testing.T) {
 
 	t.Run("Circular dependency (direct)", func(t *testing.T) {
 		w := core.NewWorkflow("w1", "test", "")
-		t1 := core.NewTask("t1", "task 1", "", nil, []string{"t2"})
-		t2 := core.NewTask("t2", "task 2", "", nil, []string{"t1"})
+		t1 := core.NewTask("t1", w.ID, "task 1", "", nil, []string{"t2"})
+		t2 := core.NewTask("t2", w.ID, "task 2", "", nil, []string{"t1"})
 		w.AddTask(t1)
 		w.AddTask(t2)
 
@@ -68,9 +68,9 @@ func TestValidator_Validate(t *testing.T) {
 
 	t.Run("Circular dependency (indirect)", func(t *testing.T) {
 		w := core.NewWorkflow("w1", "test", "")
-		t1 := core.NewTask("t1", "task 1", "", nil, []string{"t2"})
-		t2 := core.NewTask("t2", "task 2", "", nil, []string{"t3"})
-		t3 := core.NewTask("t3", "task 3", "", nil, []string{"t1"})
+		t1 := core.NewTask("t1", w.ID, "task 1", "", nil, []string{"t2"})
+		t2 := core.NewTask("t2", w.ID, "task 2", "", nil, []string{"t3"})
+		t3 := core.NewTask("t3", w.ID, "task 3", "", nil, []string{"t1"})
 		w.AddTask(t1)
 		w.AddTask(t2)
 		w.AddTask(t3)

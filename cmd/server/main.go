@@ -30,7 +30,7 @@ func (w *DummyWorker) Execute(ctx context.Context, execCtx *executor.ExecutionCo
 }
 
 func main() {
-	// 1. Load Configuration
+	// 1. Load Configuration (this also loads .env)
 	cfg := config.Load()
 	sm := secrets.NewEnvSecretManager()
 
