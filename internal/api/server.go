@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"time"
@@ -72,11 +72,33 @@ func (s *Server) Routes() http.Handler {
 
 // --- Middleware ---
 
+// responseWriter wraps http.ResponseWriter to capture the status code for logging.
+type responseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func newResponseWriter(w http.ResponseWriter) *responseWriter {
+	return &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+}
+
+func (rw *responseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
 func (s *Server) loggingMiddleware(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		h.ServeHTTP(w, r)
-		log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(start))
+		rw := newResponseWriter(w)
+		h.ServeHTTP(rw, r)
+		slog.Info("http",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", rw.statusCode,
+			"latency_ms", time.Since(start).Milliseconds(),
+			"remote", r.RemoteAddr,
+		)
 	})
 }
 
@@ -101,7 +123,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		log.Printf("writeJSON encode error: %v", err)
+		slog.Error("writeJSON encode", "error", err)
 	}
 }
 
@@ -158,7 +180,7 @@ func (s *Server) handleUpdateCompose(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("WebSocket upgrade error: %v", err)
+		slog.Error("WebSocket upgrade", "error", err)
 		return
 	}
 	defer c.Close()
@@ -219,7 +241,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if err := c.WriteJSON(event); err != nil {
-				log.Printf("WebSocket write error: %v", err)
+				slog.Error("WebSocket write", "error", err)
 				return
 			}
 		}
@@ -233,7 +255,7 @@ func (s *Server) handleListProviders(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	records, err := s.store.ListWorkflows()
 	if err != nil {
-		log.Printf("listWorkflows error: %v", err)
+		slog.Error("listWorkflows", "error", err)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -303,7 +325,7 @@ func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 
 	workflow := core.NewWorkflow(req.ID, req.Name, req.Description)
 	if err := s.store.SaveWorkflow(store.WorkflowToRecord(workflow)); err != nil {
-		log.Printf("createWorkflow save error: %v", err)
+		slog.Error("createWorkflow save", "error", err)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -333,7 +355,7 @@ func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 
 		_ = workflow.AddTask(task)
 		if err := s.store.SaveTask(store.TaskToRecord(workflow.ID, task)); err != nil {
-			log.Printf("createWorkflow saveTask error: %v", err)
+			slog.Error("createWorkflow saveTask", "error", err)
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -352,7 +374,7 @@ func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 
 	tasks, err := s.store.GetWorkflowTasks(id)
 	if err != nil {
-		log.Printf("getWorkflow tasks error: %v", err)
+		slog.Error("getWorkflow tasks", "error", err)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -378,7 +400,7 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 	record.Name = req.Name
 	record.Description = req.Description
 	if err := s.store.UpdateWorkflow(record); err != nil {
-		log.Printf("updateWorkflow error: %v", err)
+		slog.Error("updateWorkflow", "error", err)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -409,13 +431,13 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 		_, lookupErr := s.store.GetTask(id, tr.ID)
 		if lookupErr != nil {
 			if err := s.store.SaveTask(store.TaskToRecord(id, task)); err != nil {
-				log.Printf("updateWorkflow saveTask error: %v", err)
+				slog.Error("updateWorkflow saveTask", "error", err)
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
 		} else {
 			if err := s.store.UpdateTask(store.TaskToRecord(id, task)); err != nil {
-				log.Printf("updateWorkflow updateTask error: %v", err)
+				slog.Error("updateWorkflow updateTask", "error", err)
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}
@@ -428,7 +450,7 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteWorkflow(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if err := s.store.DeleteWorkflow(id); err != nil {
-		log.Printf("deleteWorkflow error: %v", err)
+		slog.Error("deleteWorkflow", "error", err)
 		writeError(w, http.StatusNotFound, "workflow not found or could not be deleted")
 		return
 	}
@@ -445,7 +467,7 @@ func (s *Server) handleExecuteWorkflow(w http.ResponseWriter, r *http.Request) {
 
 	tasks, err := s.store.GetWorkflowTasks(id)
 	if err != nil {
-		log.Printf("executeWorkflow tasks error: %v", err)
+		slog.Error("executeWorkflow tasks", "error", err)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -469,7 +491,7 @@ func (s *Server) handleExecuteWorkflow(w http.ResponseWriter, r *http.Request) {
 
 	go func() {
 		if err := s.executor.Execute(workflow); err != nil {
-			log.Printf("workflow %s execution error: %v", id, err)
+			slog.Error("workflow execution error", "workflow_id", id, "error", err)
 		}
 	}()
 
@@ -493,7 +515,7 @@ func (s *Server) handleApproveTask(w http.ResponseWriter, r *http.Request) {
 
 	rec.Status = string(core.TaskRunning)
 	if err := s.store.UpdateTask(rec); err != nil {
-		log.Printf("approveTask update error: %v", err)
+		slog.Error("approveTask update", "error", err)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -505,7 +527,7 @@ func (s *Server) handleListAgents(w http.ResponseWriter, r *http.Request) {
 	// survive a server restart.
 	records, err := s.store.ListAgents()
 	if err != nil {
-		log.Printf("listAgents store error: %v", err)
+		slog.Error("listAgents store", "error", err)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -542,7 +564,7 @@ func (s *Server) handleListArtifacts(w http.ResponseWriter, r *http.Request) {
 	// artifacts survive a server restart.
 	records, err := s.store.ListAllArtifacts()
 	if err != nil {
-		log.Printf("listArtifacts store error: %v", err)
+		slog.Error("listArtifacts store", "error", err)
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -577,15 +599,15 @@ func (s *Server) handleListArtifacts(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleListQueues(w http.ResponseWriter, r *http.Request) {
 	pending, err := s.store.ListTasksByStatus(string(core.TaskPending))
 	if err != nil {
-		log.Printf("listQueues pending error: %v", err)
+		slog.Error("listQueues pending", "error", err)
 	}
 	running, err := s.store.ListTasksByStatus(string(core.TaskRunning))
 	if err != nil {
-		log.Printf("listQueues running error: %v", err)
+		slog.Error("listQueues running", "error", err)
 	}
 	waiting, err := s.store.ListTasksByStatus(string(core.TaskWaitingForApproval))
 	if err != nil {
-		log.Printf("listQueues waiting error: %v", err)
+		slog.Error("listQueues waiting", "error", err)
 	}
 
 	all := append(pending, running...)
