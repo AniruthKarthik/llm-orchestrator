@@ -22,24 +22,34 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
+const maxBodyBytes = 1 << 20 // 1 MiB — reject larger request bodies
+
 type Server struct {
-	executor *executor.Executor
-	store    store.Store
-	eb       *events.EventBus
+	executor     *executor.Executor
+	store        store.Store
+	eb           *events.EventBus
+	allowedOrigin string // CORS origin, "*" by default
+	apiKey        string // optional — empty means no auth
 }
 
 func NewServer(e *executor.Executor, s store.Store, eb *events.EventBus) *Server {
+	origin := os.Getenv("ALLOWED_ORIGIN")
+	if origin == "" {
+		origin = "*"
+	}
 	return &Server{
-		executor: e,
-		store:    s,
-		eb:       eb,
+		executor:      e,
+		store:         s,
+		eb:            eb,
+		allowedOrigin: origin,
+		apiKey:        os.Getenv("API_KEY"),
 	}
 }
 
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 
-	// Health
+	// Health (unauthenticated — used by load-balancer probes)
 	mux.HandleFunc("GET /api/v1/health", s.handleHealth)
 
 	// Meta
@@ -67,7 +77,7 @@ func (s *Server) Routes() http.Handler {
 	// WebSocket
 	mux.HandleFunc("GET /api/v1/ws", s.handleWebSocket)
 
-	return s.loggingMiddleware(s.enableCORS(mux))
+	return s.loggingMiddleware(s.enableCORS(s.authMiddleware(s.bodyLimitMiddleware(mux))))
 }
 
 // --- Middleware ---
@@ -104,15 +114,52 @@ func (s *Server) loggingMiddleware(h http.Handler) http.Handler {
 
 func (s *Server) enableCORS(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Origin", s.allowedOrigin)
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Key")
 
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
 
+		h.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) authMiddleware(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Auth is opt-in: skip if API_KEY is not configured
+		if s.apiKey == "" {
+			h.ServeHTTP(w, r)
+			return
+		}
+		// Health check is always public
+		if r.URL.Path == "/api/v1/health" {
+			h.ServeHTTP(w, r)
+			return
+		}
+		// Accept X-API-Key header or Authorization: Bearer <key>
+		key := r.Header.Get("X-API-Key")
+		if key == "" {
+			bearer := r.Header.Get("Authorization")
+			if len(bearer) > 7 && bearer[:7] == "Bearer " {
+				key = bearer[7:]
+			}
+		}
+		if key != s.apiKey {
+			writeError(w, http.StatusUnauthorized, "invalid or missing API key")
+			return
+		}
+		h.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) bodyLimitMiddleware(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodPatch {
+			r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+		}
 		h.ServeHTTP(w, r)
 	})
 }
