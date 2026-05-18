@@ -18,6 +18,7 @@ type Executor struct {
 	registry         *WorkerRegistry
 	agentRegistry    *agents.AgentRegistry
 	artifactRegistry *core.ArtifactRegistry
+	memoryRegistry   *core.MemoryRegistry
 	pluginRegistry   plugin.Registry
 	eventBus         *events.EventBus
 	store            store.Store
@@ -33,6 +34,7 @@ func NewExecutor(
 	registry *WorkerRegistry,
 	agentRegistry *agents.AgentRegistry,
 	artifactRegistry *core.ArtifactRegistry,
+	memoryRegistry *core.MemoryRegistry,
 	eventBus *events.EventBus,
 	store store.Store,
 ) *Executor {
@@ -40,6 +42,7 @@ func NewExecutor(
 		registry:            registry,
 		agentRegistry:       agentRegistry,
 		artifactRegistry:    artifactRegistry,
+		memoryRegistry:      memoryRegistry,
 		pluginRegistry:      plugin.NewDefaultRegistry(),
 		eventBus:            eventBus,
 		store:               store,
@@ -127,7 +130,7 @@ func (e *Executor) execute(
 		return err
 	}
 
-	execCtx := NewExecutionContext(workflow.ID, e.artifactRegistry)
+	execCtx := NewExecutionContext(workflow.ID, e.artifactRegistry, e.memoryRegistry)
 
 	for _, stage := range plan.Stages {
 		// Check if workflow was cancelled by a previous stage failure

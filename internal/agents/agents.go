@@ -30,6 +30,7 @@ type Agent struct {
 	Provider     string
 	Tools        []string // List of tool names this agent can use
 	Config       map[string]any
+	Memory       core.Memory
 
 	mu sync.RWMutex
 }

@@ -11,6 +11,7 @@ type ExecutionContext struct {
 
 	SharedMemory map[string]any
 	Artifacts    *core.ArtifactRegistry
+	Memories     *core.MemoryRegistry
 
 	Mutex sync.RWMutex
 }
@@ -18,11 +19,13 @@ type ExecutionContext struct {
 func NewExecutionContext(
 	workflowID string,
 	artifacts *core.ArtifactRegistry,
+	memories *core.MemoryRegistry,
 ) *ExecutionContext {
 	newExecContext := &ExecutionContext{
 		WorkflowID:   workflowID,
 		SharedMemory: make(map[string]any),
 		Artifacts:    artifacts,
+		Memories:     memories,
 	}
 
 	return newExecContext
