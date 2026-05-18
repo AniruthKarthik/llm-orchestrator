@@ -18,4 +18,6 @@ type Provider interface {
 	Capabilities() Capabilities
 
 	Name() string
+
+	ListModels(ctx context.Context) ([]string, error)
 }

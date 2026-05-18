@@ -38,6 +38,8 @@ type Task struct {
 	Timeout      time.Duration
 	OutputSchema map[string]string // Key: field name, Value: expected type (e.g., "string", "int", "bool")
 	AgentID      string            // Optional: ID of the agent assigned to this task
+	Provider     string            // Optional: Explicitly assigned provider
+	Model        string            // Optional: Explicitly assigned model
 
 	RequiresApproval bool // If true, task will wait for human approval before finishing or starting
 

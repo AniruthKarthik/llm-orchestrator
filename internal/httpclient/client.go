@@ -66,3 +66,28 @@ func (c *Client) Post(
 
 	return resp, nil
 }
+
+func (c *Client) Get(
+	ctx context.Context,
+	endpoint string,
+	headers map[string]string,
+) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(
+		ctx, http.MethodGet,
+		c.baseURL+endpoint,
+		nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if c.apiKey != "" && req.Header.Get("Authorization") == "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
+	for key, val := range headers {
+		req.Header.Set(key, val)
+	}
+
+	return c.httpClient.Do(req)
+}

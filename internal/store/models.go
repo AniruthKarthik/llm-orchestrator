@@ -36,6 +36,8 @@ type TaskRecord struct {
 	Timeout      time.Duration
 	OutputSchema map[string]string
 	AgentID      string
+	Provider     string
+	Model        string
 
 	CreatedAt  time.Time
 	StartedAt  *time.Time

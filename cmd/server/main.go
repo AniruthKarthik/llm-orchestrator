@@ -84,7 +84,7 @@ func main() {
 	eb.Subscribe(events.TaskCompleted, al.Handle)
 	eb.Subscribe(events.TaskFailed, al.Handle)
 
-	srv := api.NewServer(exec, s)
+	srv := api.NewServer(exec, s, eb)
 
 	// 5. Start HTTP Server
 	handler := srv.Routes()
@@ -120,7 +120,7 @@ func registerProviders(sm secrets.SecretManager) {
 		log.Println("Registered Gemini provider")
 	}
 
-	if len(providers.List()) == 0 {
+	if len(providers.List(context.Background())) == 0 {
 		log.Println("Warning: No LLM providers were registered. Check your environment variables.")
 	}
 }

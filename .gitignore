@@ -1,4 +1,13 @@
-# Binaries
+# Logs
+*.log
+logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Binaries / Build output
 *.exe
 *.exe~
 *.dll
@@ -6,25 +15,26 @@
 *.dylib
 *.test
 *.out
-
-# Build output
 /bin/
 /dist/
 /build/
+ui/dist/
+ui/dist-ssr/
+
+# Node dependencies
+node_modules/
+ui/node_modules/
 
 # Go workspace
 go.work
 go.work.sum
 
-# Dependencies (optional — usually committed)
+# Dependencies
 vendor/
 
 # Coverage
 *.cover
 coverage.out
-
-# Logs
-*.log
 
 # OS files
 .DS_Store
@@ -35,10 +45,16 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
 # Environment files
 .env
 .env.local
+.env.*.local
 
 # Temporary files
 *.tmp
@@ -46,13 +62,16 @@ Thumbs.db
 
 # Local workflow files
 workflow.yaml
+workflow.yaml.example
 
 # Local docker-compose
 docker-compose.yaml
+docker-compose.yaml.example
 
-# Generated files (optional)
+# Generated files
 *.gen.go
 
-
-
-reference.md
+# Project specific
+orch
+server
+test_orch.sh

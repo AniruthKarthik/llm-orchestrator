@@ -2,6 +2,7 @@ package openai
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -33,6 +34,33 @@ func (p *OpenAIProvider) Capabilities() providers.Capabilities {
 		SupportsStreaming: true,
 		SupportsVision:    true,
 	}
+}
+
+func (p *OpenAIProvider) ListModels(ctx context.Context) ([]string, error) {
+	resp, err := p.client.Get(ctx, "/models", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	models := make([]string, 0, len(result.Data))
+	for _, m := range result.Data {
+		models = append(models, m.ID)
+	}
+	return models, nil
 }
 
 func (p *OpenAIProvider) Stream(

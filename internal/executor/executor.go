@@ -87,6 +87,10 @@ func (e *Executor) WithRouter(r Router) *Executor {
 	return e
 }
 
+func (e *Executor) GetAgentRegistry() *agents.AgentRegistry {
+	return e.agentRegistry
+}
+
 func (e *Executor) Execute(
 	workflow *core.Workflow,
 ) error {

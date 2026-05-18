@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"context"
 	"fmt"
 	"sync"
 )
@@ -28,15 +29,28 @@ func Get(name string) (Provider, error) {
 	return p, nil
 }
 
-// List returns a list of all registered provider names.
-func List() []string {
+type ProviderInfo struct {
+	Name   string   `json:"name"`
+	Models []string `json:"models"`
+}
+
+// List returns a list of all registered provider names and their supported models.
+func List(ctx context.Context) []ProviderInfo {
 	mu.RLock()
 	defer mu.RUnlock()
-	names := make([]string, 0, len(registry))
-	for name := range registry {
-		names = append(names, name)
+	infos := make([]ProviderInfo, 0, len(registry))
+	for name, p := range registry {
+		models, err := p.ListModels(ctx)
+		if err != nil {
+			// If error, just return empty models or log it
+			models = []string{}
+		}
+		infos = append(infos, ProviderInfo{
+			Name:   name,
+			Models: models,
+		})
 	}
-	return names
+	return infos
 }
 
 // Clear removes all providers from the registry (primarily for testing).

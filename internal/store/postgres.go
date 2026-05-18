@@ -143,8 +143,8 @@ func (s *PostgresStore) SaveTask(task TaskRecord) error {
 	schemaJSON, _ := json.Marshal(task.OutputSchema)
 
 	query := `
-		INSERT INTO tasks (id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema, agent_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+		INSERT INTO tasks (id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema, agent_id, provider, model)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 	`
 	_, err := s.pool.Exec(ctx, query,
 		task.ID,
@@ -162,6 +162,8 @@ func (s *PostgresStore) SaveTask(task TaskRecord) error {
 		int64(task.Timeout),
 		schemaJSON,
 		task.AgentID,
+		task.Provider,
+		task.Model,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save task: %w", err)
@@ -177,7 +179,7 @@ func (s *PostgresStore) UpdateTask(task TaskRecord) error {
 
 	query := `
 		UPDATE tasks
-		SET name = $3, description = $4, status = $5, error = $6, input = $7, output = $8, dependencies = $9, started_at = $10, finished_at = $11, timeout = $12, output_schema = $13, agent_id = $14
+		SET name = $3, description = $4, status = $5, error = $6, input = $7, output = $8, dependencies = $9, started_at = $10, finished_at = $11, timeout = $12, output_schema = $13, agent_id = $14, provider = $15, model = $16
 		WHERE id = $1 AND workflow_id = $2
 	`
 	tag, err := s.pool.Exec(ctx, query,
@@ -195,6 +197,8 @@ func (s *PostgresStore) UpdateTask(task TaskRecord) error {
 		int64(task.Timeout),
 		schemaJSON,
 		task.AgentID,
+		task.Provider,
+		task.Model,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update task: %w", err)
@@ -208,7 +212,7 @@ func (s *PostgresStore) UpdateTask(task TaskRecord) error {
 func (s *PostgresStore) GetTask(workflowID string, taskID string) (TaskRecord, error) {
 	ctx := context.Background()
 	query := `
-		SELECT id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema, agent_id
+		SELECT id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema, agent_id, provider, model
 		FROM tasks
 		WHERE id = $1 AND workflow_id = $2
 	`
@@ -231,6 +235,8 @@ func (s *PostgresStore) GetTask(workflowID string, taskID string) (TaskRecord, e
 		&timeout,
 		&schemaJSON,
 		&t.AgentID,
+		&t.Provider,
+		&t.Model,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -248,7 +254,7 @@ func (s *PostgresStore) GetTask(workflowID string, taskID string) (TaskRecord, e
 func (s *PostgresStore) GetWorkflowTasks(workflowID string) ([]TaskRecord, error) {
 	ctx := context.Background()
 	query := `
-		SELECT id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema, agent_id
+		SELECT id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema, agent_id, provider, model
 		FROM tasks
 		WHERE workflow_id = $1
 	`
@@ -279,6 +285,8 @@ func (s *PostgresStore) GetWorkflowTasks(workflowID string) ([]TaskRecord, error
 			&timeout,
 			&schemaJSON,
 			&t.AgentID,
+			&t.Provider,
+			&t.Model,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan task: %w", err)

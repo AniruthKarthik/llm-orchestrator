@@ -25,6 +25,20 @@ import (
 	"github.com/AniruthKarthik/llm-orchestrator/internal/store"
 )
 
+// DummyProvider for local MVP testing without API keys
+type DummyProvider struct{}
+func (p *DummyProvider) Name() string { return "groq" }
+func (p *DummyProvider) Capabilities() providers.Capabilities { return providers.Capabilities{} }
+func (p *DummyProvider) Stream(ctx context.Context, req providers.GenerateRequest) (<-chan providers.StreamChunk, <-chan error) { return nil, nil }
+func (p *DummyProvider) ListModels(ctx context.Context) ([]string, error) {
+	return []string{"llama-3.1-8b-instant", "llama-3.1-70b-versatile"}, nil
+}
+func (p *DummyProvider) Generate(ctx context.Context, req providers.GenerateRequest) (*providers.GenerateResponse, error) {
+	return &providers.GenerateResponse{
+		Content: `{"joke": "Why do programmers prefer dark mode? Because light attracts bugs!"}`,
+	}, nil
+}
+
 func registerProviders(sm secrets.SecretManager) {
 	groqKey, err := sm.Get("GROQ_API_KEY")
 	if err == nil {
@@ -48,17 +62,10 @@ func registerProviders(sm secrets.SecretManager) {
 		providers.Register(gemini.NewGeminiProvider(key))
 		log.Println("Registered Gemini provider")
 	}
-}
 
-// DummyProvider for local MVP testing without API keys
-type DummyProvider struct{}
-func (p *DummyProvider) Name() string { return "groq" }
-func (p *DummyProvider) Capabilities() providers.Capabilities { return providers.Capabilities{} }
-func (p *DummyProvider) Stream(ctx context.Context, req providers.GenerateRequest) (<-chan providers.StreamChunk, <-chan error) { return nil, nil }
-func (p *DummyProvider) Generate(ctx context.Context, req providers.GenerateRequest) (*providers.GenerateResponse, error) {
-	return &providers.GenerateResponse{
-		Content: `{"joke": "Why do programmers prefer dark mode? Because light attracts bugs!"}`,
-	}, nil
+	if len(providers.List(context.Background())) == 0 {
+		log.Println("Warning: No LLM providers were registered. Check your environment variables.")
+	}
 }
 
 func main() {

@@ -103,3 +103,14 @@ This document serves as the master plan for building a powerful AI orchestration
 ## Phase 8: Testing & Validation - COMPLETED
 - [x] **Concurrency Stress Tests**: Validate stability under high local load.
 - [ ] **End-to-End Suite**: Comprehensive tests for the full objective-to-completion lifecycle.
+
+---
+
+## Phase 9: Orchestration Control Plane Backend APIs
+- [ ] **Real-time Metrics API**: `GET /metrics/throughput`, `GET /metrics/latency` for high-density dashboard charts.
+- [ ] **Provider Credentials API**: `GET /providers/credentials`, `POST /providers/credentials` to manage keys dynamically from the UI.
+- [ ] **Advanced Execution Policies**: Implement backend support for retry overrides, queue depth visibility, and node priority settings.
+- [ ] **Advanced Log Filtering**: Expand WebSocket and `GET /logs` APIs to support filtering by severity, provider, and tool.
+- [ ] **Artifact & Memory Explorers**: Add REST APIs to visually navigate and inspect generated artifacts and memory stores.
+- [ ] **Global Search API**: Implement an index-based search across workflows, tasks, and artifacts.
+- [ ] **Tool Registry API**: Dynamic creation and sandboxing configuration of tools from the UI.

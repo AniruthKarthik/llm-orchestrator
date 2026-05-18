@@ -92,6 +92,8 @@ func TaskToRecord(
 		Timeout:       task.Timeout,
 		OutputSchema:  core.DeepCopyStringMap(task.OutputSchema),
 		AgentID:       task.AgentID,
+		Provider:      task.Provider,
+		Model:         task.Model,
 		}
 		}
 
@@ -117,6 +119,8 @@ func TaskToRecord(
 			Timeout:      task.Timeout,
 			OutputSchema: core.DeepCopyStringMap(task.OutputSchema),
 			AgentID:      task.AgentID,
+			Provider:     task.Provider,
+			Model:        task.Model,
 		}
 		}
 
