@@ -320,3 +320,38 @@ func (s *PostgresStore) GetLatestCheckpoint(workflowID string) (CheckpointRecord
 	}
 	return cp, nil
 }
+
+func (s *PostgresStore) ListWorkflows() ([]WorkflowRecord, error) {
+	ctx := context.Background()
+	query := `
+		SELECT id, name, description, status, created_at, started_at, finished_at, timeout
+		FROM workflows
+	`
+	rows, err := s.pool.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list workflows: %w", err)
+	}
+	defer rows.Close()
+
+	var workflows []WorkflowRecord
+	for rows.Next() {
+		var w WorkflowRecord
+		var timeout int64
+		err := rows.Scan(
+			&w.ID,
+			&w.Name,
+			&w.Description,
+			&w.Status,
+			&w.CreatedAt,
+			&w.StartedAt,
+			&w.FinishedAt,
+			&timeout,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan workflow: %w", err)
+		}
+		w.Timeout = time.Duration(timeout)
+		workflows = append(workflows, w)
+	}
+	return workflows, nil
+}

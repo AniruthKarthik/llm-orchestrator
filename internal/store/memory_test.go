@@ -89,3 +89,33 @@ func TestCoreTask_DeepCopy(t *testing.T) {
 		t.Errorf("expected true, got '%v'", taskOutput)
 	}
 }
+
+func TestMemoryStore_ListWorkflows(t *testing.T) {
+	s := NewMemoryStore()
+	s.SaveWorkflow(WorkflowRecord{ID: "w1", Name: "Workflow 1"})
+	s.SaveWorkflow(WorkflowRecord{ID: "w2", Name: "Workflow 2"})
+
+	workflows, err := s.ListWorkflows()
+	if err != nil {
+		t.Fatalf("ListWorkflows failed: %v", err)
+	}
+
+	if len(workflows) != 2 {
+		t.Errorf("expected 2 workflows, got %d", len(workflows))
+	}
+
+	foundW1 := false
+	foundW2 := false
+	for _, w := range workflows {
+		if w.ID == "w1" {
+			foundW1 = true
+		}
+		if w.ID == "w2" {
+			foundW2 = true
+		}
+	}
+
+	if !foundW1 || !foundW2 {
+		t.Errorf("expected to find w1 and w2, foundW1: %v, foundW2: %v", foundW1, foundW2)
+	}
+}

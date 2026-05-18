@@ -210,3 +210,15 @@ func (m *MemoryStore) GetLatestCheckpoint(workflowID string) (CheckpointRecord, 
 
 	return cp, nil
 }
+
+func (m *MemoryStore) ListWorkflows() ([]WorkflowRecord, error) {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	workflows := make([]WorkflowRecord, 0, len(m.workflows))
+	for _, w := range m.workflows {
+		workflows = append(workflows, w)
+	}
+
+	return workflows, nil
+}

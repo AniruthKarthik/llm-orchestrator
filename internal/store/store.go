@@ -41,6 +41,8 @@ type Store interface {
 	GetLatestCheckpoint(
 		workflowID string,
 	) (CheckpointRecord, error)
+
+	ListWorkflows() ([]WorkflowRecord, error)
 }
 
 func WorkflowToRecord(
