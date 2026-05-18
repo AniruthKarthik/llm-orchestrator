@@ -91,6 +91,10 @@ func (e *Executor) GetAgentRegistry() *agents.AgentRegistry {
 	return e.agentRegistry
 }
 
+func (e *Executor) GetArtifactRegistry() *core.ArtifactRegistry {
+	return e.artifactRegistry
+}
+
 func (e *Executor) Execute(
 	workflow *core.Workflow,
 ) error {

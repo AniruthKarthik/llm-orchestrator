@@ -1,19 +1,18 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  GitBranch, 
-  Settings, 
+import {
+  LayoutDashboard,
+  GitBranch,
+  Settings,
   Activity,
   Terminal,
   Database,
   Users,
-  Search,
-  Bell,
   HardDrive,
-  ListTodo
+  ListTodo,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface SidebarItemProps {
   icon: React.ReactNode;
@@ -26,10 +25,10 @@ const SidebarItem = ({ icon, label, to, active }: SidebarItemProps) => (
   <Link
     to={to}
     className={cn(
-      "flex items-center gap-2.5 px-3 py-2 rounded-md transition-colors text-sm",
-      active 
-        ? "bg-secondary text-secondary-foreground font-medium" 
-        : "text-muted-foreground hover:bg-secondary/50 hover:text-foreground font-medium"
+      'flex items-center gap-2.5 px-3 py-2 rounded-md transition-colors text-sm',
+      active
+        ? 'bg-secondary text-secondary-foreground font-medium'
+        : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground font-medium'
     )}
   >
     {icon}
@@ -39,6 +38,7 @@ const SidebarItem = ({ icon, label, to, active }: SidebarItemProps) => (
 
 export const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
+  const { isConnected } = useWebSocket();
 
   const primaryItems = [
     { icon: <LayoutDashboard size={16} />, label: 'Dashboard', to: '/' },
@@ -54,6 +54,8 @@ export const DashboardLayout = ({ children }: { children: React.ReactNode }) => 
     { icon: <Settings size={16} />, label: 'Settings', to: '/config' },
   ];
 
+  const allItems = [...primaryItems, ...secondaryItems];
+
   return (
     <div className="flex h-screen bg-muted/20 overflow-hidden text-sm">
       {/* Sidebar */}
@@ -66,15 +68,15 @@ export const DashboardLayout = ({ children }: { children: React.ReactNode }) => 
             <span>Orchestrator Plane</span>
           </div>
         </div>
-        
+
         <div className="flex-1 overflow-y-auto py-3 px-3 space-y-6">
           <div>
             <div className="px-2 mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Core</div>
             <nav className="space-y-0.5">
               {primaryItems.map((item) => (
-                <SidebarItem 
-                  key={item.to} 
-                  {...item} 
+                <SidebarItem
+                  key={item.to}
+                  {...item}
                   active={location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to))}
                 />
               ))}
@@ -85,20 +87,32 @@ export const DashboardLayout = ({ children }: { children: React.ReactNode }) => 
             <div className="px-2 mb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">Resources</div>
             <nav className="space-y-0.5">
               {secondaryItems.map((item) => (
-                <SidebarItem 
-                  key={item.to} 
-                  {...item} 
+                <SidebarItem
+                  key={item.to}
+                  {...item}
                   active={location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to))}
                 />
               ))}
             </nav>
           </div>
         </div>
-        
+
         <div className="p-3 border-t border-border mt-auto">
-          <div className="flex items-center gap-2 px-2 py-1.5 rounded bg-green-500/10 border border-green-500/20 text-green-700">
-            <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-xs font-medium">Engine Connected</span>
+          <div
+            className={cn(
+              'flex items-center gap-2 px-2 py-1.5 rounded border text-xs font-medium',
+              isConnected
+                ? 'bg-green-500/10 border-green-500/20 text-green-700'
+                : 'bg-red-500/10 border-red-500/20 text-red-600'
+            )}
+          >
+            <div
+              className={cn(
+                'w-1.5 h-1.5 rounded-full',
+                isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'
+              )}
+            />
+            <span>{isConnected ? 'Engine Connected' : 'Engine Disconnected'}</span>
           </div>
         </div>
       </aside>
@@ -107,30 +121,34 @@ export const DashboardLayout = ({ children }: { children: React.ReactNode }) => 
       <main className="flex-1 flex flex-col min-w-0">
         <header className="h-12 border-b border-border bg-card flex items-center justify-between px-4 shrink-0">
           <div className="flex items-center gap-2 text-sm">
-             <span className="font-semibold text-foreground">
-               {[...primaryItems, ...secondaryItems].find(item => location.pathname === item.to || (item.to !== '/' && location.pathname.startsWith(item.to)))?.label || 'Dashboard'}
-             </span>
+            <span className="font-semibold text-foreground">
+              {allItems.find(
+                (item) =>
+                  location.pathname === item.to ||
+                  (item.to !== '/' && location.pathname.startsWith(item.to))
+              )?.label || 'Dashboard'}
+            </span>
           </div>
           <div className="flex items-center gap-3">
-             <div className="relative">
-               <Search className="absolute left-2.5 top-1.5 text-muted-foreground" size={14} />
-               <input 
-                 type="text" 
-                 placeholder="Search workflows, tasks..." 
-                 className="h-8 w-64 bg-secondary/50 border border-border rounded-md pl-8 pr-3 text-xs focus:outline-none focus:ring-1 focus:ring-primary focus:bg-background transition-colors"
-               />
-               <div className="absolute right-2 top-1.5 text-[10px] text-muted-foreground border border-border rounded px-1 bg-background">⌘K</div>
-             </div>
-             <button className="relative p-1.5 text-muted-foreground hover:bg-secondary rounded-md transition-colors">
-               <Bell size={16} />
-               <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-blue-500 rounded-full border border-card"></span>
-             </button>
-             <div className="w-7 h-7 rounded bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-semibold text-xs ml-2">
-               Admin
-             </div>
+            <div
+              className={cn(
+                'flex items-center gap-1.5 px-2 py-1 rounded border text-[10px] font-semibold',
+                isConnected
+                  ? 'bg-green-500/10 border-green-500/20 text-green-600'
+                  : 'bg-red-500/10 border-red-500/20 text-red-600'
+              )}
+            >
+              <div
+                className={cn(
+                  'w-1 h-1 rounded-full',
+                  isConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'
+                )}
+              />
+              {isConnected ? 'WS LIVE' : 'WS OFFLINE'}
+            </div>
           </div>
         </header>
-        
+
         <div className="flex-1 overflow-auto bg-muted/20">
           {children}
         </div>

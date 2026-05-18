@@ -19,6 +19,9 @@ func (m *mockProvider) Stream(ctx context.Context, req GenerateRequest) (<-chan 
 func (m *mockProvider) Capabilities() Capabilities {
 	return Capabilities{SupportsTools: true}
 }
+func (m *mockProvider) ListModels(ctx context.Context) ([]string, error) {
+	return []string{}, nil
+}
 
 func TestRegistry(t *testing.T) {
 	Clear()
@@ -30,7 +33,7 @@ func TestRegistry(t *testing.T) {
 	Register(p2)
 
 	// Test List
-	list := List()
+	list := List(context.Background())
 	if len(list) != 2 {
 		t.Errorf("expected 2 providers, got %d", len(list))
 	}
@@ -56,7 +59,7 @@ func TestRegistry(t *testing.T) {
 
 	// Test Clear
 	Clear()
-	if len(List()) != 0 {
+	if len(List(context.Background())) != 0 {
 		t.Error("expected empty registry after clear")
 	}
 }

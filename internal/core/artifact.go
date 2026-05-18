@@ -80,3 +80,13 @@ func (r *ArtifactRegistry) ListByTask(taskID string) []*Artifact {
 	}
 	return list
 }
+
+func (r *ArtifactRegistry) ListAll() []*Artifact {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	list := make([]*Artifact, 0, len(r.artifacts))
+	for _, a := range r.artifacts {
+		list = append(list, a)
+	}
+	return list
+}

@@ -1,65 +1,185 @@
 import { create } from 'zustand';
-import type { Workflow, Provider } from '@/types';
+import type { Workflow, Provider, Agent, Artifact, Task } from '@/types';
 import api from '@/api/client';
 
-interface WorkflowState {
-  workflows: Workflow[];
-  providers: Provider[];
+// Per-resource slice to avoid cross-page loading/error state bleed
+interface ResourceState<T> {
+  data: T[];
   isLoading: boolean;
   error: string | null;
-
-  fetchWorkflows: () => Promise<void>;
-  fetchProviders: () => Promise<void>;
-  createWorkflow: (workflow: Partial<Workflow>) => Promise<void>;
-  deleteWorkflow: (id: string) => Promise<void>;
 }
 
-export const useWorkflowStore = create<WorkflowState>((set) => ({
-  workflows: [],
-  providers: [],
+interface MetricsData {
+  activeWorkflows: number;
+  completedWorkflows: number;
+  failedWorkflows: number;
+  pendingWorkflows: number;
+  totalWorkflows: number;
+  tasksInQueue: number;
+  providersOnline: number;
+  providers: Provider[];
+}
+
+interface WorkflowState {
+  // Per-resource slices
+  workflows: ResourceState<Workflow>;
+  providers: ResourceState<Provider>;
+  agents: ResourceState<Agent>;
+  artifacts: ResourceState<Artifact>;
+  queueTasks: ResourceState<Task>;
+  metrics: MetricsData | null;
+  metricsLoading: boolean;
+
+  // Actions
+  fetchWorkflows: () => Promise<void>;
+  fetchProviders: () => Promise<void>;
+  fetchAgents: () => Promise<void>;
+  fetchArtifacts: () => Promise<void>;
+  fetchQueues: () => Promise<void>;
+  fetchMetrics: () => Promise<void>;
+  createWorkflow: (workflow: Record<string, unknown>) => Promise<Workflow | null>;
+  deleteWorkflow: (id: string) => Promise<boolean>;
+  executeWorkflow: (id: string) => Promise<boolean>;
+}
+
+const emptyResource = <T>(): ResourceState<T> => ({
+  data: [],
   isLoading: false,
   error: null,
+});
+
+export const useWorkflowStore = create<WorkflowState>((set, get) => ({
+  workflows: emptyResource<Workflow>(),
+  providers: emptyResource<Provider>(),
+  agents: emptyResource<Agent>(),
+  artifacts: emptyResource<Artifact>(),
+  queueTasks: emptyResource<Task>(),
+  metrics: null,
+  metricsLoading: false,
 
   fetchWorkflows: async () => {
-    set({ isLoading: true });
+    set((s) => ({ workflows: { ...s.workflows, isLoading: true, error: null } }));
     try {
       const response = await api.get('/workflows');
-      set({ workflows: response.data, isLoading: false });
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false });
+      set({ workflows: { data: response.data ?? [], isLoading: false, error: null } });
+    } catch (error: unknown) {
+      const msg = extractErrorMessage(error);
+      set((s) => ({ workflows: { ...s.workflows, isLoading: false, error: msg } }));
     }
   },
 
   fetchProviders: async () => {
+    set((s) => ({ providers: { ...s.providers, isLoading: true, error: null } }));
     try {
       const response = await api.get('/meta/providers');
-      set({ providers: response.data });
-    } catch (error: any) {
-      console.error('Failed to fetch providers', error);
+      set({ providers: { data: response.data ?? [], isLoading: false, error: null } });
+    } catch (error: unknown) {
+      const msg = extractErrorMessage(error);
+      set((s) => ({ providers: { ...s.providers, isLoading: false, error: msg } }));
+    }
+  },
+
+  fetchAgents: async () => {
+    set((s) => ({ agents: { ...s.agents, isLoading: true, error: null } }));
+    try {
+      const response = await api.get('/agents');
+      set({ agents: { data: response.data ?? [], isLoading: false, error: null } });
+    } catch (error: unknown) {
+      const msg = extractErrorMessage(error);
+      set((s) => ({ agents: { ...s.agents, isLoading: false, error: msg } }));
+    }
+  },
+
+  fetchArtifacts: async () => {
+    set((s) => ({ artifacts: { ...s.artifacts, isLoading: true, error: null } }));
+    try {
+      const response = await api.get('/artifacts');
+      set({ artifacts: { data: response.data ?? [], isLoading: false, error: null } });
+    } catch (error: unknown) {
+      const msg = extractErrorMessage(error);
+      set((s) => ({ artifacts: { ...s.artifacts, isLoading: false, error: msg } }));
+    }
+  },
+
+  fetchQueues: async () => {
+    set((s) => ({ queueTasks: { ...s.queueTasks, isLoading: true, error: null } }));
+    try {
+      const response = await api.get('/queues');
+      set({ queueTasks: { data: response.data ?? [], isLoading: false, error: null } });
+    } catch (error: unknown) {
+      const msg = extractErrorMessage(error);
+      set((s) => ({ queueTasks: { ...s.queueTasks, isLoading: false, error: msg } }));
+    }
+  },
+
+  fetchMetrics: async () => {
+    set({ metricsLoading: true });
+    try {
+      const response = await api.get('/metrics');
+      set({ metrics: response.data, metricsLoading: false });
+    } catch {
+      set({ metricsLoading: false });
     }
   },
 
   createWorkflow: async (workflow) => {
-    set({ isLoading: true });
+    set((s) => ({ workflows: { ...s.workflows, isLoading: true, error: null } }));
     try {
-      await api.post('/workflows', workflow);
-      const response = await api.get('/workflows');
-      set({ workflows: response.data, isLoading: false });
-    } catch (error: any) {
-      set({ error: error.message, isLoading: false });
+      const response = await api.post('/workflows', workflow);
+      // Refresh list after creation
+      get().fetchWorkflows();
+      return response.data as Workflow;
+    } catch (error: unknown) {
+      const msg = extractErrorMessage(error);
+      set((s) => ({ workflows: { ...s.workflows, isLoading: false, error: msg } }));
+      return null;
     }
   },
 
   deleteWorkflow: async (id) => {
-    // Note: Backend doesn't have DELETE /workflows/{id} yet, but we'll add it if needed
-    // For now just client-side or assume it exists
     try {
-      // await api.delete(`/workflows/${id}`);
-      set((state) => ({
-        workflows: state.workflows.filter((w) => w.id !== id),
+      await api.delete(`/workflows/${id}`);
+      set((s) => ({
+        workflows: {
+          ...s.workflows,
+          data: s.workflows.data.filter((w) => w.id !== id),
+        },
       }));
-    } catch (error: any) {
-      set({ error: error.message });
+      return true;
+    } catch (error: unknown) {
+      const msg = extractErrorMessage(error);
+      set((s) => ({ workflows: { ...s.workflows, error: msg } }));
+      return false;
+    }
+  },
+
+  executeWorkflow: async (id) => {
+    try {
+      await api.post(`/workflows/${id}/execute`);
+      // Refresh to get updated status
+      setTimeout(() => get().fetchWorkflows(), 1000);
+      return true;
+    } catch (error: unknown) {
+      const msg = extractErrorMessage(error);
+      set((s) => ({ workflows: { ...s.workflows, error: msg } }));
+      return false;
     }
   },
 }));
+
+function extractErrorMessage(error: unknown): string {
+  if (error && typeof error === 'object') {
+    const err = error as Record<string, unknown>;
+    // Axios error shape
+    if (err.response && typeof err.response === 'object') {
+      const resp = err.response as Record<string, unknown>;
+      if (resp.data && typeof resp.data === 'object') {
+        const data = resp.data as Record<string, unknown>;
+        if (typeof data.error === 'string') return data.error;
+      }
+      if (typeof resp.data === 'string') return resp.data;
+    }
+    if (typeof err.message === 'string') return err.message;
+  }
+  return 'An unknown error occurred';
+}

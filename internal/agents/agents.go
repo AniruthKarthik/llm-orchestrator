@@ -213,10 +213,5 @@ func (e *AgentExecutor) Execute(ctx context.Context, agentID string, task *core.
 		return result, nil
 	}
 
-	// Fallback to simulated response if no provider is configured
-	return map[string]any{
-		"status": "simulated_success",
-		"agent":  agent.Name,
-		"role":   string(agent.Role),
-	}, nil
+	return nil, fmt.Errorf("agent %s has no provider configured", agent.ID)
 }

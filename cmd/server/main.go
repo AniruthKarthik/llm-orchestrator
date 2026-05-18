@@ -23,12 +23,6 @@ import (
 	"github.com/AniruthKarthik/llm-orchestrator/internal/store"
 )
 
-type DummyWorker struct{}
-
-func (w *DummyWorker) Execute(ctx context.Context, execCtx *executor.ExecutionContext, task *core.Task) (map[string]any, error) {
-	log.Printf("Executing task: %s (%s)", task.ID, task.Name)
-	return map[string]any{"status": "success", "taskID": task.ID}, nil
-}
 
 func main() {
 	// 1. Load Configuration (this also loads .env)
@@ -66,8 +60,6 @@ func main() {
 	tr := core.NewToolRegistry()
 	tp := core.NewToolPolicy()
 
-	// Register a dummy worker for testing
-	wr.Register("test-task", &DummyWorker{})
 
 	exec := executor.NewExecutor(wr, ar, art, mem, tr, tp, eb, s)
 	exec.UseTaskMiddleware(executor.PanicRecoveryMiddleware)

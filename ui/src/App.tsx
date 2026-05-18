@@ -5,6 +5,10 @@ import WorkflowsPage from '@/pages/WorkflowsPage';
 import WorkflowBuilderPage from '@/pages/WorkflowBuilderPage';
 import ExecutionsPage from '@/pages/ExecutionsPage';
 import ConfigPage from '@/pages/ConfigPage';
+import ProvidersPage from '@/pages/ProvidersPage';
+import AgentsPage from '@/pages/AgentsPage';
+import ArtifactsPage from '@/pages/ArtifactsPage';
+import QueuesPage from '@/pages/QueuesPage';
 
 function App() {
   return (
@@ -16,6 +20,10 @@ function App() {
           <Route path="/workflows/new" element={<WorkflowBuilderPage />} />
           <Route path="/workflows/:id" element={<WorkflowBuilderPage />} />
           <Route path="/executions" element={<ExecutionsPage />} />
+          <Route path="/queues" element={<QueuesPage />} />
+          <Route path="/agents" element={<AgentsPage />} />
+          <Route path="/providers" element={<ProvidersPage />} />
+          <Route path="/artifacts" element={<ArtifactsPage />} />
           <Route path="/config" element={<ConfigPage />} />
         </Routes>
       </DashboardLayout>

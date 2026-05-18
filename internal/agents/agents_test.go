@@ -5,7 +5,20 @@ import (
 	"testing"
 
 	"github.com/AniruthKarthik/llm-orchestrator/internal/core"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/providers"
 )
+
+type mockProvider struct{}
+
+func (m *mockProvider) Name() string { return "mock" }
+func (m *mockProvider) Generate(ctx context.Context, req providers.GenerateRequest) (*providers.GenerateResponse, error) {
+	return &providers.GenerateResponse{Content: `{"status": "success", "agent": "Test Agent"}`}, nil
+}
+func (m *mockProvider) Stream(ctx context.Context, req providers.GenerateRequest) (<-chan providers.StreamChunk, <-chan error) {
+	return nil, nil
+}
+func (m *mockProvider) Capabilities() providers.Capabilities { return providers.Capabilities{} }
+func (m *mockProvider) ListModels(ctx context.Context) ([]string, error) { return []string{}, nil }
 
 func TestAgentRegistry(t *testing.T) {
 	registry := NewAgentRegistry()
@@ -37,11 +50,16 @@ func TestAgentRegistry(t *testing.T) {
 }
 
 func TestAgentExecutor(t *testing.T) {
+	// Register the mock provider in the global registry so the executor can find it.
+	providers.Register(&mockProvider{})
+	defer providers.Clear() // Cleanup after test
+
 	registry := NewAgentRegistry()
 	agent := &Agent{
-		ID:   "agent-1",
-		Name: "Test Agent",
-		Role: RoleExecutor,
+		ID:       "agent-1",
+		Name:     "Test Agent",
+		Role:     RoleExecutor,
+		Provider: "mock", // must match mockProvider.Name()
 	}
 	registry.Register(agent)
 
@@ -57,3 +75,4 @@ func TestAgentExecutor(t *testing.T) {
 		t.Errorf("Expected Test Agent in output, got %v", output["agent"])
 	}
 }
+

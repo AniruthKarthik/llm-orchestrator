@@ -34,6 +34,10 @@ type Store interface {
 		workflowID string,
 	) ([]TaskRecord, error)
 
+	ListTasksByStatus(
+		status string,
+	) ([]TaskRecord, error)
+
 	SaveCheckpoint(
 		checkpoint CheckpointRecord,
 	) error
@@ -51,6 +55,9 @@ type Store interface {
 	SaveArtifact(artifact ArtifactRecord) error
 	GetArtifact(artifactID string) (ArtifactRecord, error)
 	ListArtifactsByWorkflow(workflowID string) ([]ArtifactRecord, error)
+	ListAllArtifacts() ([]ArtifactRecord, error)
+
+	DeleteWorkflow(workflowID string) error
 }
 
 func WorkflowToRecord(
@@ -72,10 +79,7 @@ func WorkflowToRecord(
 	}
 }
 
-func TaskToRecord(
-	workflowID string,
-	task *core.Task,
-) TaskRecord {
+func TaskToRecord(workflowID string, task *core.Task) TaskRecord {
 	return TaskRecord{
 		ID:           task.ID,
 		WorkflowID:   workflowID,
@@ -84,26 +88,23 @@ func TaskToRecord(
 		Status:       string(task.Status),
 		Error:        task.Error,
 		Input:        core.DeepCopyMap(task.Input),
-		Output:        core.DeepCopyMap(task.Output),
-		Dependencies:  core.DeepCopyStringSlice(task.Dependencies),
-		CreatedAt:     task.CreatedAt,
-		StartedAt:     task.StartedAt,
-		FinishedAt:    task.FinishedAt,
-		Timeout:       task.Timeout,
-		OutputSchema:  core.DeepCopyStringMap(task.OutputSchema),
-		AgentID:       task.AgentID,
-		Provider:      task.Provider,
-		Model:         task.Model,
-		}
-		}
+		Output:       core.DeepCopyMap(task.Output),
+		Dependencies: core.DeepCopyStringSlice(task.Dependencies),
+		CreatedAt:    task.CreatedAt,
+		StartedAt:    task.StartedAt,
+		FinishedAt:   task.FinishedAt,
+		Timeout:      task.Timeout,
+		OutputSchema: core.DeepCopyStringMap(task.OutputSchema),
+		AgentID:      task.AgentID,
+		Provider:     task.Provider,
+		Model:        task.Model,
+	}
+}
 
-		func RecordToWorkflow(
-		workflow WorkflowRecord,
-		tasks []TaskRecord,
-		) *core.Workflow {
-		runtimeTasks := make(map[string]*core.Task)
+func RecordToWorkflow(workflow WorkflowRecord, tasks []TaskRecord) *core.Workflow {
+	runtimeTasks := make(map[string]*core.Task)
 
-		for _, task := range tasks {
+	for _, task := range tasks {
 		runtimeTasks[task.ID] = &core.Task{
 			ID:           task.ID,
 			Name:         task.Name,
@@ -122,7 +123,7 @@ func TaskToRecord(
 			Provider:     task.Provider,
 			Model:        task.Model,
 		}
-		}
+	}
 
 	return &core.Workflow{
 		ID:          workflow.ID,

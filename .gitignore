@@ -21,6 +21,10 @@ lerna-debug.log*
 ui/dist/
 ui/dist-ssr/
 
+# Compiled Go binaries (project-level)
+/orch
+/server
+
 # Node dependencies
 node_modules/
 ui/node_modules/
@@ -60,18 +64,18 @@ Thumbs.db
 *.tmp
 *.temp
 
+# One-off fix scripts (never commit)
+fix.py
+fix_*.py
+
 # Local workflow files
 workflow.yaml
-workflow.yaml.example
 
-# Local docker-compose
+# Local docker-compose (generated/overridden locally)
 docker-compose.yaml
-docker-compose.yaml.example
 
 # Generated files
 *.gen.go
 
-# Project specific
-orch
-server
+# Test scripts
 test_orch.sh

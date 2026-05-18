@@ -65,6 +65,9 @@ func (s *PostgresStore) SaveWorkflow(workflow WorkflowRecord) error {
 	query := `
 		INSERT INTO workflows (id, name, description, status, created_at, started_at, finished_at, timeout)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (id) DO UPDATE
+		SET name = EXCLUDED.name, description = EXCLUDED.description, status = EXCLUDED.status,
+		    started_at = EXCLUDED.started_at, finished_at = EXCLUDED.finished_at, timeout = EXCLUDED.timeout
 	`
 	_, err := s.pool.Exec(ctx, query,
 		workflow.ID,
@@ -145,6 +148,13 @@ func (s *PostgresStore) SaveTask(task TaskRecord) error {
 	query := `
 		INSERT INTO tasks (id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema, agent_id, provider, model)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		ON CONFLICT (id, workflow_id) DO UPDATE
+		SET name = EXCLUDED.name, description = EXCLUDED.description, status = EXCLUDED.status,
+		    error = EXCLUDED.error, input = EXCLUDED.input, output = EXCLUDED.output,
+		    dependencies = EXCLUDED.dependencies, started_at = EXCLUDED.started_at,
+		    finished_at = EXCLUDED.finished_at, timeout = EXCLUDED.timeout,
+		    output_schema = EXCLUDED.output_schema, agent_id = EXCLUDED.agent_id,
+		    provider = EXCLUDED.provider, model = EXCLUDED.model
 	`
 	_, err := s.pool.Exec(ctx, query,
 		task.ID,
@@ -261,6 +271,55 @@ func (s *PostgresStore) GetWorkflowTasks(workflowID string) ([]TaskRecord, error
 	rows, err := s.pool.Query(ctx, query, workflowID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get workflow tasks: %w", err)
+	}
+	defer rows.Close()
+
+	var tasks []TaskRecord
+	for rows.Next() {
+		var t TaskRecord
+		var inputJSON, outputJSON, schemaJSON []byte
+		var timeout int64
+		err := rows.Scan(
+			&t.ID,
+			&t.WorkflowID,
+			&t.Name,
+			&t.Description,
+			&t.Status,
+			&t.Error,
+			&inputJSON,
+			&outputJSON,
+			&t.Dependencies,
+			&t.CreatedAt,
+			&t.StartedAt,
+			&t.FinishedAt,
+			&timeout,
+			&schemaJSON,
+			&t.AgentID,
+			&t.Provider,
+			&t.Model,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan task: %w", err)
+		}
+		json.Unmarshal(inputJSON, &t.Input)
+		json.Unmarshal(outputJSON, &t.Output)
+		json.Unmarshal(schemaJSON, &t.OutputSchema)
+		t.Timeout = time.Duration(timeout)
+		tasks = append(tasks, t)
+	}
+	return tasks, nil
+}
+
+func (s *PostgresStore) ListTasksByStatus(status string) ([]TaskRecord, error) {
+	ctx := context.Background()
+	query := `
+		SELECT id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema, agent_id, provider, model
+		FROM tasks
+		WHERE status = $1
+	`
+	rows, err := s.pool.Query(ctx, query, status)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tasks by status: %w", err)
 	}
 	defer rows.Close()
 
@@ -529,6 +588,56 @@ func (s *PostgresStore) GetLatestCheckpoint(workflowID string) (CheckpointRecord
 		return CheckpointRecord{}, fmt.Errorf("failed to get latest checkpoint: %w", err)
 	}
 	return cp, nil
+}
+
+func (s *PostgresStore) DeleteWorkflow(workflowID string) error {
+	ctx := context.Background()
+	query := `DELETE FROM workflows WHERE id = $1`
+	tag, err := s.pool.Exec(ctx, query, workflowID)
+	if err != nil {
+		return fmt.Errorf("failed to delete workflow: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("workflow not found: %s", workflowID)
+	}
+	return nil
+}
+
+func (s *PostgresStore) ListAllArtifacts() ([]ArtifactRecord, error) {
+	ctx := context.Background()
+	query := `
+		SELECT id, workflow_id, task_id, name, type, data, metadata, created_at
+		FROM artifacts
+		ORDER BY created_at DESC
+	`
+	rows, err := s.pool.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list all artifacts: %w", err)
+	}
+	defer rows.Close()
+
+	var artifacts []ArtifactRecord
+	for rows.Next() {
+		var a ArtifactRecord
+		var dataJSON, metadataJSON []byte
+		err := rows.Scan(
+			&a.ID,
+			&a.WorkflowID,
+			&a.TaskID,
+			&a.Name,
+			&a.Type,
+			&dataJSON,
+			&metadataJSON,
+			&a.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan artifact: %w", err)
+		}
+		json.Unmarshal(dataJSON, &a.Data)
+		json.Unmarshal(metadataJSON, &a.Metadata)
+		artifacts = append(artifacts, a)
+	}
+	return artifacts, nil
 }
 
 func (s *PostgresStore) ListWorkflows() ([]WorkflowRecord, error) {

@@ -174,6 +174,24 @@ func (m *MemoryStore) GetWorkflowTasks(
 	return tasks, nil
 }
 
+func (m *MemoryStore) ListTasksByStatus(
+	status string,
+) ([]TaskRecord, error) {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	list := make([]TaskRecord, 0)
+	for _, workflowTasks := range m.tasks {
+		for _, task := range workflowTasks {
+			if task.Status == status {
+				list = append(list, deepCopyTask(task))
+			}
+		}
+	}
+
+	return list, nil
+}
+
 func deepCopyTask(t TaskRecord) TaskRecord {
 	cp := t
 	cp.Input = core.DeepCopyMap(t.Input)
@@ -315,3 +333,32 @@ func (m *MemoryStore) ListWorkflows() ([]WorkflowRecord, error) {
 
 	return workflows, nil
 }
+
+func (m *MemoryStore) ListAllArtifacts() ([]ArtifactRecord, error) {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	list := make([]ArtifactRecord, 0, len(m.artifacts))
+	for _, artifact := range m.artifacts {
+		cp := artifact
+		cp.Data = core.DeepCopyValue(artifact.Data)
+		cp.Metadata = core.DeepCopyMap(artifact.Metadata)
+		list = append(list, cp)
+	}
+	return list, nil
+}
+
+func (m *MemoryStore) DeleteWorkflow(workflowID string) error {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	if _, exists := m.workflows[workflowID]; !exists {
+		return fmt.Errorf("workflow not found: %s", workflowID)
+	}
+
+	delete(m.workflows, workflowID)
+	delete(m.tasks, workflowID)
+	delete(m.checkpoints, workflowID)
+	return nil
+}
+

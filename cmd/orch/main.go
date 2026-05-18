@@ -25,48 +25,6 @@ import (
 	"github.com/AniruthKarthik/llm-orchestrator/internal/store"
 )
 
-// DummyProvider for local MVP testing without API keys
-type DummyProvider struct{}
-func (p *DummyProvider) Name() string { return "groq" }
-func (p *DummyProvider) Capabilities() providers.Capabilities { return providers.Capabilities{} }
-func (p *DummyProvider) Stream(ctx context.Context, req providers.GenerateRequest) (<-chan providers.StreamChunk, <-chan error) { return nil, nil }
-func (p *DummyProvider) ListModels(ctx context.Context) ([]string, error) {
-	return []string{"llama-3.1-8b-instant", "llama-3.1-70b-versatile"}, nil
-}
-func (p *DummyProvider) Generate(ctx context.Context, req providers.GenerateRequest) (*providers.GenerateResponse, error) {
-	return &providers.GenerateResponse{
-		Content: `{"joke": "Why do programmers prefer dark mode? Because light attracts bugs!"}`,
-	}, nil
-}
-
-func registerProviders(sm secrets.SecretManager) {
-	groqKey, err := sm.Get("GROQ_API_KEY")
-	if err == nil {
-		providers.Register(groq.NewGroqProvider(groqKey))
-		log.Println("Registered Groq provider")
-	} else {
-		// Fallback for local MVP testing
-		providers.Register(&DummyProvider{})
-		log.Println("GROQ_API_KEY not found. Registered Dummy provider as 'groq'")
-	}
-	
-	if key, err := sm.Get("OPENAI_API_KEY"); err == nil {
-		providers.Register(openai.NewOpenAIProvider(key))
-		log.Println("Registered OpenAI provider")
-	}
-	if key, err := sm.Get("ANTHROPIC_API_KEY"); err == nil {
-		providers.Register(anthropic.NewAnthropicProvider(key))
-		log.Println("Registered Anthropic provider")
-	}
-	if key, err := sm.Get("GEMINI_API_KEY"); err == nil {
-		providers.Register(gemini.NewGeminiProvider(key))
-		log.Println("Registered Gemini provider")
-	}
-
-	if len(providers.List(context.Background())) == 0 {
-		log.Println("Warning: No LLM providers were registered. Check your environment variables.")
-	}
-}
 
 func main() {
 	// 1. Parse Flags
@@ -218,4 +176,34 @@ func main() {
 	}
 
 	time.Sleep(100 * time.Millisecond)
+}
+
+func registerProviders(sm secrets.SecretManager) {
+	// Groq
+	if key, err := sm.Get("GROQ_API_KEY"); err == nil {
+		providers.Register(groq.NewGroqProvider(key))
+		log.Println("Registered Groq provider")
+	}
+
+	// OpenAI
+	if key, err := sm.Get("OPENAI_API_KEY"); err == nil {
+		providers.Register(openai.NewOpenAIProvider(key))
+		log.Println("Registered OpenAI provider")
+	}
+
+	// Anthropic
+	if key, err := sm.Get("ANTHROPIC_API_KEY"); err == nil {
+		providers.Register(anthropic.NewAnthropicProvider(key))
+		log.Println("Registered Anthropic provider")
+	}
+
+	// Gemini
+	if key, err := sm.Get("GEMINI_API_KEY"); err == nil {
+		providers.Register(gemini.NewGeminiProvider(key))
+		log.Println("Registered Gemini provider")
+	}
+
+	if len(providers.List(context.Background())) == 0 {
+		log.Println("Warning: No LLM providers were registered. Check your environment variables.")
+	}
 }
