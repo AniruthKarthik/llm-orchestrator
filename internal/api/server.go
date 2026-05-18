@@ -334,6 +334,12 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 	if records == nil {
 		records = []store.WorkflowRecord{}
 	}
+	// Enrich each record with task count
+	for i, rec := range records {
+		if tasks, err := s.store.GetWorkflowTasks(rec.ID); err == nil {
+			records[i].TaskCount = len(tasks)
+		}
+	}
 	writeJSON(w, http.StatusOK, records)
 }
 
@@ -433,7 +439,14 @@ func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusCreated, workflow)
+	// Return the persisted WorkflowRecord (properly camelCase JSON)
+	saved, err := s.store.GetWorkflow(req.ID)
+	if err != nil {
+		// Fallback: return what we have
+		saved = store.WorkflowToRecord(workflow)
+	}
+	saved.TaskCount = len(req.Tasks)
+	writeJSON(w, http.StatusCreated, saved)
 }
 
 func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
@@ -451,8 +464,21 @@ func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	workflow := store.RecordToWorkflow(record, tasks)
-	writeJSON(w, http.StatusOK, workflow)
+	// Build a response map with camelCase fields and tasks map keyed by ID
+	tasksMap := make(map[string]store.TaskRecord, len(tasks))
+	for _, t := range tasks {
+		tasksMap[t.ID] = t
+	}
+	record.TaskCount = len(tasks)
+
+	type WorkflowResponse struct {
+		store.WorkflowRecord
+		Tasks map[string]store.TaskRecord `json:"tasks"`
+	}
+	writeJSON(w, http.StatusOK, WorkflowResponse{
+		WorkflowRecord: record,
+		Tasks:          tasksMap,
+	})
 }
 
 func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
@@ -516,7 +542,16 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+	// Return updated record
+	updated, err := s.store.GetWorkflow(id)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "updated", "id": id})
+		return
+	}
+	if tasks, err := s.store.GetWorkflowTasks(id); err == nil {
+		updated.TaskCount = len(tasks)
+	}
+	writeJSON(w, http.StatusOK, updated)
 }
 
 func (s *Server) handleDeleteWorkflow(w http.ResponseWriter, r *http.Request) {

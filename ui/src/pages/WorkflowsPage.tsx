@@ -131,7 +131,7 @@ export default function WorkflowsPage() {
               </thead>
               <tbody className="divide-y divide-border text-sm">
                 {filteredWorkflows.map((workflow) => {
-                  const taskCount = workflow.tasks ? Object.keys(workflow.tasks).length : 0;
+                  const taskCount = workflow.taskCount ?? (workflow.tasks ? Object.keys(workflow.tasks).length : 0);
                   return (
                     <tr key={workflow.id} className="hover:bg-secondary/20 transition-colors group">
                       <td className="px-4 py-3">

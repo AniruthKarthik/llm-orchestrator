@@ -6,7 +6,8 @@ export interface Workflow {
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;
-  tasks?: Record<string, Task>;
+  taskCount?: number;            // populated on list endpoint
+  tasks?: Record<string, Task>;  // populated on GET /workflows/:id
 }
 
 export interface Task {
