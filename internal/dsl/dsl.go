@@ -58,7 +58,65 @@ func (p *YAMLParser) Parse(data []byte) (*WorkflowDefinition, error) {
 // Compiler converts a WorkflowDefinition into a runtime Workflow.
 type Compiler struct{}
 
+func (c *Compiler) Validate(def *WorkflowDefinition) error {
+	// 1. Check for cycles
+	adj := make(map[string][]string)
+	for _, td := range def.Tasks {
+		adj[td.ID] = td.Dependencies
+	}
+
+	visited := make(map[string]bool)
+	recStack := make(map[string]bool)
+
+	var hasCycle func(string) bool
+	hasCycle = func(node string) bool {
+		visited[node] = true
+		recStack[node] = true
+
+		for _, neighbor := range adj[node] {
+			if !visited[neighbor] {
+				if hasCycle(neighbor) {
+					return true
+				}
+			} else if recStack[neighbor] {
+				return true
+			}
+		}
+
+		recStack[node] = false
+		return false
+	}
+
+	for _, td := range def.Tasks {
+		if !visited[td.ID] {
+			if hasCycle(td.ID) {
+				return fmt.Errorf("workflow contains a cycle involving task %s", td.ID)
+			}
+		}
+	}
+
+	// 2. Check for missing dependencies
+	taskIDs := make(map[string]bool)
+	for _, td := range def.Tasks {
+		taskIDs[td.ID] = true
+	}
+
+	for _, td := range def.Tasks {
+		for _, dep := range td.Dependencies {
+			if !taskIDs[dep] {
+				return fmt.Errorf("task %s has unknown dependency: %s", td.ID, dep)
+			}
+		}
+	}
+
+	return nil
+}
+
 func (c *Compiler) Compile(def *WorkflowDefinition) (*core.Workflow, error) {
+	if err := c.Validate(def); err != nil {
+		return nil, fmt.Errorf("validation failed: %w", err)
+	}
+
 	workflow := core.NewWorkflow(def.ID, def.Name, def.Description)
 
 	for _, td := range def.Tasks {
