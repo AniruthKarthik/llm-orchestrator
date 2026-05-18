@@ -24,6 +24,7 @@ type Executor struct {
 	pluginRegistry   plugin.Registry
 	eventBus         *events.EventBus
 	store            store.Store
+	router           Router
 
 	taskMiddlewares     []TaskMiddleware
 	workflowMiddlewares []WorkflowMiddleware
@@ -52,6 +53,7 @@ func NewExecutor(
 		pluginRegistry:      plugin.NewDefaultRegistry(),
 		eventBus:            eventBus,
 		store:               store,
+		router:              NewCapabilityAwareRouter(),
 		taskMiddlewares:     make([]TaskMiddleware, 0),
 		workflowMiddlewares: make([]WorkflowMiddleware, 0),
 		concurrencyLimiter:  NewConcurrencyLimiter(100), // Default limit
@@ -77,6 +79,11 @@ func (e *Executor) UseWorkflowMiddleware(m ...WorkflowMiddleware) {
 
 func (e *Executor) WithPluginRegistry(r plugin.Registry) *Executor {
 	e.pluginRegistry = r
+	return e
+}
+
+func (e *Executor) WithRouter(r Router) *Executor {
+	e.router = r
 	return e
 }
 
@@ -271,11 +278,21 @@ func (e *Executor) executeTask(
 
 	var handler TaskHandler
 
-	if task.AgentID != "" {
+	agentID := task.AgentID
+	if agentID == "" {
+		// Use router to select agent
+		var err error
+		agentID, err = e.router.Route(ctx, task, e.agentRegistry.List())
+		if err != nil {
+			return fmt.Errorf("failed to route task: %w", err)
+		}
+	}
+
+	if agentID != "" {
 		// Agent-based execution
 		agentExec := agents.NewAgentExecutor(e.agentRegistry)
 		handler = func(ctx context.Context, execCtx *ExecutionContext, t *core.Task) (map[string]any, error) {
-			return agentExec.Execute(ctx, t.AgentID, t)
+			return agentExec.Execute(ctx, agentID, t)
 		}
 	} else {
 		// Worker-based execution
