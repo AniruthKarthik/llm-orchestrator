@@ -14,8 +14,8 @@ export default function WorkflowsPage() {
     fetchWorkflows();
   }, [fetchWorkflows]);
 
-  const getStatusBadge = (status: string) => {
-    switch (status.toUpperCase()) {
+  const getStatusBadge = (status?: string) => {
+    switch ((status || '').toUpperCase()) {
       case 'COMPLETED': return 'bg-green-500/10 text-green-600 border-green-500/20';
       case 'RUNNING': return 'bg-blue-500/10 text-blue-600 border-blue-500/20';
       case 'FAILED': return 'bg-red-500/10 text-red-600 border-red-500/20';
@@ -23,10 +23,12 @@ export default function WorkflowsPage() {
     }
   };
 
-  const filteredWorkflows = workflows.data.filter((wf) =>
-    wf.name.toLowerCase().includes(search.toLowerCase()) ||
-    (wf.description && wf.description.toLowerCase().includes(search.toLowerCase()))
-  );
+  const filteredWorkflows = workflows.data.filter((wf) => {
+    const s = (search || '').toLowerCase();
+    const nameMatch = (wf.name || '').toLowerCase().includes(s);
+    const descMatch = (wf.description || '').toLowerCase().includes(s);
+    return nameMatch || descMatch;
+  });
 
   const handleRun = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
