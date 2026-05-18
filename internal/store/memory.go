@@ -159,10 +159,8 @@ func (m *MemoryStore) GetWorkflowTasks(
 
 	workflowTasks, exists := m.tasks[workflowID]
 	if !exists {
-		return nil, fmt.Errorf(
-			"workflow tasks not found: %s",
-			workflowID,
-		)
+		// Workflow exists but has no tasks yet — return empty slice, not error
+		return []TaskRecord{}, nil
 	}
 
 	tasks := make([]TaskRecord, 0, len(workflowTasks))
