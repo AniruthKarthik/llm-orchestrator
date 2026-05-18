@@ -31,8 +31,9 @@ The LLM Orchestrator is a production-grade, local-first execution engine designe
 The `orch` command is the fastest way to run a local workflow.
 
 ```bash
-# Run the example workflow
-go run ./cmd/orch workflow.yaml.example
+cp workflow.yaml.example workflow.yaml
+# Edit workflow.yaml as needed
+go run ./cmd/orch workflow.yaml
 ```
 
 ### 2. Running the API Server
@@ -53,12 +54,12 @@ go run ./cmd/server/main.go
 The easiest way to set up the entire stack (Postgres + Server) is using Docker Compose.
 
 ```bash
-# Start the stack
+cp docker-compose.yaml.example docker-compose.yaml
 docker-compose up --build
 ```
 
 ### 4. Defining a Workflow
-Workflows are defined in YAML. Here is a simple example (`workflow.yaml.example`):
+Workflows are defined in YAML. Here is a simple example (`workflow.yaml`):
 
 ```yaml
 id: research-summary-v1

@@ -51,7 +51,13 @@ The system supports manual intervention through **Approval Checkpoints**.
 *   **Metrics Collector:** Tracks token usage, model costs, task latency, and failure rates (compatible with Prometheus).
 *   **Secret Management:** Securely retrieves API keys and credentials from environment variables, ensuring zero-exposure in logs or persistence.
 
-## 6. Directory Structure
+## 6. Deployment & Infrastructure
+The system is designed for local-first deployment but can be easily scaled or containerized.
+*   **Dockerization:** A multi-stage `Dockerfile` packages the Go server into a minimal Alpine-based image.
+*   **Orchestration:** `docker-compose.yaml.example` provides a template for a complete stack, including a PostgreSQL database and the API server, with environment variables injected for LLM provider access.
+*   **Local Setup:** The CLI (`orch`) is optimized for zero-dependency execution using the in-memory store.
+
+## 7. Directory Structure
 ```text
 ├── cmd/               # Entry points (orch CLI, API Server)
 ├── internal/

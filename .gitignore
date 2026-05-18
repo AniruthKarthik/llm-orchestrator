@@ -44,6 +44,11 @@ Thumbs.db
 *.tmp
 *.temp
 
+# Local workflow files
+workflow.yaml
+
+# Local docker-compose
+docker-compose.yaml
 
 # Generated files (optional)
 *.gen.go
