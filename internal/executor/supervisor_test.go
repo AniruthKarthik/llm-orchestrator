@@ -12,7 +12,8 @@ import (
 func TestSupervisor_CheckStuckTasks(t *testing.T) {
 	s := store.NewMemoryStore()
 	ar := agents.NewAgentRegistry()
-	e := NewExecutor(NewWorkerRegistry(), ar, nil, s)
+	art := core.NewArtifactRegistry()
+	e := NewExecutor(NewWorkerRegistry(), ar, art, nil, s)
 	supervisor := NewSupervisor(s, e, 100*time.Millisecond)
 
 	// 1. Setup a stuck task

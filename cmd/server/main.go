@@ -59,11 +59,12 @@ func main() {
 	eb := events.NewEventBus(10)
 	wr := executor.NewWorkerRegistry()
 	ar := agents.NewAgentRegistry()
+	art := core.NewArtifactRegistry()
 
 	// Register a dummy worker for testing
 	wr.Register("test-task", &DummyWorker{})
 
-	exec := executor.NewExecutor(wr, ar, eb, s)
+	exec := executor.NewExecutor(wr, ar, art, eb, s)
 	exec.UseTaskMiddleware(executor.PanicRecoveryMiddleware)
 	exec.UseTaskMiddleware(executor.OutputValidationMiddleware)
 

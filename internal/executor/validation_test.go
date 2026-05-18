@@ -40,7 +40,8 @@ func TestOutputValidationMiddleware(t *testing.T) {
 
 	middleware := OutputValidationMiddleware(validHandler)
 	ctx := context.Background()
-	execCtx := NewExecutionContext("wf-1")
+	art := core.NewArtifactRegistry()
+	execCtx := NewExecutionContext("wf-1", art)
 
 	// Test valid output
 	_, err := middleware(ctx, execCtx, task)

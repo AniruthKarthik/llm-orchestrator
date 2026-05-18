@@ -18,7 +18,8 @@ func TestPanicRecoveryMiddleware(t *testing.T) {
 
 	// 3. Execute the handler
 	ctx := context.Background()
-	execCtx := NewExecutionContext("wf-1")
+	art := core.NewArtifactRegistry()
+	execCtx := NewExecutionContext("wf-1", art)
 	task := core.NewTask("t1", "test", "desc", nil, nil)
 
 	output, err := middleware(ctx, execCtx, task)

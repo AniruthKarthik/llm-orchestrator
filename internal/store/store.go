@@ -47,6 +47,10 @@ type Store interface {
 	SaveAgent(agent AgentRecord) error
 	GetAgent(agentID string) (AgentRecord, error)
 	ListAgents() ([]AgentRecord, error)
+
+	SaveArtifact(artifact ArtifactRecord) error
+	GetArtifact(artifactID string) (ArtifactRecord, error)
+	ListArtifactsByWorkflow(workflowID string) ([]ArtifactRecord, error)
 }
 
 func WorkflowToRecord(

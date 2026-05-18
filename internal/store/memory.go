@@ -12,6 +12,7 @@ type MemoryStore struct {
 	tasks       map[string]map[string]TaskRecord
 	checkpoints map[string][]CheckpointRecord
 	agents      map[string]AgentRecord
+	artifacts   map[string]ArtifactRecord
 
 	mutex sync.RWMutex
 }
@@ -22,6 +23,7 @@ func NewMemoryStore() *MemoryStore {
 		tasks:       make(map[string]map[string]TaskRecord),
 		checkpoints: make(map[string][]CheckpointRecord),
 		agents:      make(map[string]AgentRecord),
+		artifacts:   make(map[string]ArtifactRecord),
 	}
 }
 
@@ -219,6 +221,51 @@ func (m *MemoryStore) ListAgents() ([]AgentRecord, error) {
 		cp.Tools = core.DeepCopyStringSlice(agent.Tools)
 		cp.Config = core.DeepCopyMap(agent.Config)
 		list = append(list, cp)
+	}
+
+	return list, nil
+}
+
+func (m *MemoryStore) SaveArtifact(artifact ArtifactRecord) error {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	cp := artifact
+	cp.Data = core.DeepCopyValue(artifact.Data)
+	cp.Metadata = core.DeepCopyMap(artifact.Metadata)
+
+	m.artifacts[artifact.ID] = cp
+	return nil
+}
+
+func (m *MemoryStore) GetArtifact(artifactID string) (ArtifactRecord, error) {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	artifact, exists := m.artifacts[artifactID]
+	if !exists {
+		return ArtifactRecord{}, fmt.Errorf("artifact not found: %s", artifactID)
+	}
+
+	cp := artifact
+	cp.Data = core.DeepCopyValue(artifact.Data)
+	cp.Metadata = core.DeepCopyMap(artifact.Metadata)
+
+	return cp, nil
+}
+
+func (m *MemoryStore) ListArtifactsByWorkflow(workflowID string) ([]ArtifactRecord, error) {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	list := make([]ArtifactRecord, 0)
+	for _, artifact := range m.artifacts {
+		if artifact.WorkflowID == workflowID {
+			cp := artifact
+			cp.Data = core.DeepCopyValue(artifact.Data)
+			cp.Metadata = core.DeepCopyMap(artifact.Metadata)
+			list = append(list, cp)
+		}
 	}
 
 	return list, nil

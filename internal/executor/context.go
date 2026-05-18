@@ -2,22 +2,27 @@ package executor
 
 import (
 	"sync"
+
+	"github.com/AniruthKarthik/llm-orchestrator/internal/core"
 )
 
 type ExecutionContext struct {
 	WorkflowID string
 
 	SharedMemory map[string]any
+	Artifacts    *core.ArtifactRegistry
 
 	Mutex sync.RWMutex
 }
 
 func NewExecutionContext(
 	workflowID string,
+	artifacts *core.ArtifactRegistry,
 ) *ExecutionContext {
 	newExecContext := &ExecutionContext{
 		WorkflowID:   workflowID,
 		SharedMemory: make(map[string]any),
+		Artifacts:    artifacts,
 	}
 
 	return newExecContext

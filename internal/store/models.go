@@ -54,6 +54,17 @@ type AgentRecord struct {
 	Config       map[string]any
 }
 
+type ArtifactRecord struct {
+	ID         string
+	WorkflowID string
+	TaskID     string
+	Name       string
+	Type       string
+	Data       any
+	Metadata   map[string]any
+	CreatedAt  time.Time
+}
+
 // CheckpointRecord represents a saved state of a workflow execution for recovery.
 type CheckpointRecord struct {
 	WorkflowID string

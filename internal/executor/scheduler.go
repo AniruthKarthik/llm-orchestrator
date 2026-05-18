@@ -100,7 +100,7 @@ func (s *Scheduler) executeQueuedTask(qt *QueuedTask) error {
 		return err
 	}
 
-	execCtx := NewExecutionContext(workflow.ID)
+	execCtx := NewExecutionContext(workflow.ID, s.executor.artifactRegistry)
 	// In a real scenario, we might want to recover shared memory from previous tasks.
 
 	return s.executor.executeTask(s.ctx, execCtx, workflow, task)

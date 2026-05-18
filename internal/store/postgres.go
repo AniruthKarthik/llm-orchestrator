@@ -388,6 +388,100 @@ func (s *PostgresStore) ListAgents() ([]AgentRecord, error) {
 	return agents, nil
 }
 
+func (s *PostgresStore) SaveArtifact(artifact ArtifactRecord) error {
+	ctx := context.Background()
+	dataJSON, _ := json.Marshal(artifact.Data)
+	metadataJSON, _ := json.Marshal(artifact.Metadata)
+
+	query := `
+		INSERT INTO artifacts (id, workflow_id, task_id, name, type, data, metadata, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		ON CONFLICT (id) DO UPDATE
+		SET name = $4, type = $5, data = $6, metadata = $7
+	`
+	_, err := s.pool.Exec(ctx, query,
+		artifact.ID,
+		artifact.WorkflowID,
+		artifact.TaskID,
+		artifact.Name,
+		artifact.Type,
+		dataJSON,
+		metadataJSON,
+		artifact.CreatedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save artifact: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) GetArtifact(artifactID string) (ArtifactRecord, error) {
+	ctx := context.Background()
+	query := `
+		SELECT id, workflow_id, task_id, name, type, data, metadata, created_at
+		FROM artifacts
+		WHERE id = $1
+	`
+	var a ArtifactRecord
+	var dataJSON, metadataJSON []byte
+	err := s.pool.QueryRow(ctx, query, artifactID).Scan(
+		&a.ID,
+		&a.WorkflowID,
+		&a.TaskID,
+		&a.Name,
+		&a.Type,
+		&dataJSON,
+		&metadataJSON,
+		&a.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ArtifactRecord{}, fmt.Errorf("artifact not found: %s", artifactID)
+		}
+		return ArtifactRecord{}, fmt.Errorf("failed to get artifact: %w", err)
+	}
+	json.Unmarshal(dataJSON, &a.Data)
+	json.Unmarshal(metadataJSON, &a.Metadata)
+	return a, nil
+}
+
+func (s *PostgresStore) ListArtifactsByWorkflow(workflowID string) ([]ArtifactRecord, error) {
+	ctx := context.Background()
+	query := `
+		SELECT id, workflow_id, task_id, name, type, data, metadata, created_at
+		FROM artifacts
+		WHERE workflow_id = $1
+	`
+	rows, err := s.pool.Query(ctx, query, workflowID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list artifacts: %w", err)
+	}
+	defer rows.Close()
+
+	var artifacts []ArtifactRecord
+	for rows.Next() {
+		var a ArtifactRecord
+		var dataJSON, metadataJSON []byte
+		err := rows.Scan(
+			&a.ID,
+			&a.WorkflowID,
+			&a.TaskID,
+			&a.Name,
+			&a.Type,
+			&dataJSON,
+			&metadataJSON,
+			&a.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan artifact: %w", err)
+		}
+		json.Unmarshal(dataJSON, &a.Data)
+		json.Unmarshal(metadataJSON, &a.Metadata)
+		artifacts = append(artifacts, a)
+	}
+	return artifacts, nil
+}
+
 func (s *PostgresStore) SaveCheckpoint(checkpoint CheckpointRecord) error {
 	ctx := context.Background()
 	query := `

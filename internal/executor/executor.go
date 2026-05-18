@@ -15,11 +15,12 @@ import (
 )
 
 type Executor struct {
-	registry       *WorkerRegistry
-	agentRegistry  *agents.AgentRegistry
-	pluginRegistry plugin.Registry
-	eventBus       *events.EventBus
-	store          store.Store
+	registry         *WorkerRegistry
+	agentRegistry    *agents.AgentRegistry
+	artifactRegistry *core.ArtifactRegistry
+	pluginRegistry   plugin.Registry
+	eventBus         *events.EventBus
+	store            store.Store
 
 	taskMiddlewares     []TaskMiddleware
 	workflowMiddlewares []WorkflowMiddleware
@@ -31,12 +32,14 @@ type Executor struct {
 func NewExecutor(
 	registry *WorkerRegistry,
 	agentRegistry *agents.AgentRegistry,
+	artifactRegistry *core.ArtifactRegistry,
 	eventBus *events.EventBus,
 	store store.Store,
 ) *Executor {
 	return &Executor{
 		registry:            registry,
 		agentRegistry:       agentRegistry,
+		artifactRegistry:    artifactRegistry,
 		pluginRegistry:      plugin.NewDefaultRegistry(),
 		eventBus:            eventBus,
 		store:               store,
@@ -124,7 +127,7 @@ func (e *Executor) execute(
 		return err
 	}
 
-	execCtx := NewExecutionContext(workflow.ID)
+	execCtx := NewExecutionContext(workflow.ID, e.artifactRegistry)
 
 	for _, stage := range plan.Stages {
 		// Check if workflow was cancelled by a previous stage failure
