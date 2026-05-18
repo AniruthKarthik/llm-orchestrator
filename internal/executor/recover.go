@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -83,15 +84,6 @@ func (s *Supervisor) checkStuckTasks() error {
 			continue
 		}
 
-		// Check workflow-level timeout
-		if wfRecord.Timeout > 0 && wfRecord.StartedAt != nil {
-			if time.Since(*wfRecord.StartedAt) > wfRecord.Timeout {
-				log.Printf("Workflow %s timed out, attempting to fail it", wfRecord.ID)
-				// Here we should ideally trigger a workflow failure
-				// For now, we'll focus on tasks.
-			}
-		}
-
 		tasks, err := s.store.GetWorkflowTasks(wfRecord.ID)
 		if err != nil {
 			log.Printf("Failed to get tasks for workflow %s: %v", wfRecord.ID, err)
@@ -103,20 +95,15 @@ func (s *Supervisor) checkStuckTasks() error {
 				continue
 			}
 
-			// Check task-level timeout
-			// Task timeouts are usually handled by context, but if a worker is misbehaving
-			// or the system crashed, the status might stay 'RUNNING'.
-			// In a local-only system, this is less likely unless the app crashes and restarts.
-			
 			if taskRecord.Timeout > 0 && taskRecord.StartedAt != nil {
-				if time.Since(*taskRecord.StartedAt) > taskRecord.Timeout + (5 * time.Second) { // 5s grace period
+				if time.Since(*taskRecord.StartedAt) > taskRecord.Timeout+(5*time.Second) { // 5s grace period
 					log.Printf("Task %s in workflow %s is stuck (timed out), marking as failed", taskRecord.ID, wfRecord.ID)
-					
+
 					taskRecord.Status = string(core.TaskFailed)
 					taskRecord.Error = "task stuck: timeout exceeded"
 					now := time.Now()
 					taskRecord.FinishedAt = &now
-					
+
 					if err := s.store.UpdateTask(taskRecord); err != nil {
 						log.Printf("Failed to update stuck task %s: %v", taskRecord.ID, err)
 					}
@@ -126,4 +113,18 @@ func (s *Supervisor) checkStuckTasks() error {
 	}
 
 	return nil
+}
+
+// PanicRecoveryMiddleware catches panics in task handlers and converts them to errors.
+func PanicRecoveryMiddleware(next TaskHandler) TaskHandler {
+	return func(ctx context.Context, execCtx *ExecutionContext, task *core.Task) (output map[string]any, err error) {
+		defer func() {
+			if r := recover(); r != nil {
+				stack := debug.Stack()
+				err = fmt.Errorf("task panicked: %v\nstack trace:\n%s", r, string(stack))
+			}
+		}()
+
+		return next(ctx, execCtx, task)
+	}
 }
