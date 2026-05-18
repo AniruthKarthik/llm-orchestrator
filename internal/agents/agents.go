@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -175,12 +176,38 @@ func (e *AgentExecutor) Execute(ctx context.Context, agentID string, task *core.
 
 		// Try to parse content as JSON to map it to task outputs
 		var jsonOutput map[string]any
-		if err := json.Unmarshal([]byte(resp.Content), &jsonOutput); err == nil {
+		cleanContent := resp.Content
+		if start := strings.Index(cleanContent, "```json"); start != -1 {
+			if end := strings.Index(cleanContent[start+7:], "```"); end != -1 {
+				cleanContent = cleanContent[start+7 : start+7+end]
+			}
+		} else if start := strings.Index(cleanContent, "```"); start != -1 {
+			if end := strings.Index(cleanContent[start+3:], "```"); end != -1 {
+				cleanContent = cleanContent[start+3 : start+3+end]
+			}
+		}
+		cleanContent = strings.TrimSpace(cleanContent)
+
+		if err := json.Unmarshal([]byte(cleanContent), &jsonOutput); err == nil {
 			for k, v := range jsonOutput {
 				result[k] = v
 			}
 		} else {
+			result["response"] = resp.Content
 			result["output"] = resp.Content
+		}
+
+		// Intelligent type coercion for the 'response' key based on task schema
+		if task.OutputSchema != nil {
+			if expectedType, ok := task.OutputSchema["response"]; ok && expectedType == "string" {
+				if val, exists := result["response"]; exists {
+					if _, isString := val.(string); !isString {
+						// Stringify complex objects for string-expected fields
+						jsonVal, _ := json.Marshal(val)
+						result["response"] = string(jsonVal)
+					}
+				}
+			}
 		}
 
 		return result, nil

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -60,15 +62,19 @@ func (p *DummyProvider) Generate(ctx context.Context, req providers.GenerateRequ
 }
 
 func main() {
-	// 1. Load Configuration (this also loads .env)
+	// 1. Parse Flags
+	autoApprove := flag.Bool("auto-approve", false, "Auto-approve tasks waiting for manual intervention")
+	flag.Parse()
+
+	// 2. Load Configuration (this also loads .env)
 	_ = config.Load()
 
-	if len(os.Args) < 2 {
-		fmt.Println("Usage: orch <workflow.yaml>")
+	if flag.NArg() < 1 {
+		fmt.Println("Usage: orch [-auto-approve] <workflow.yaml>")
 		os.Exit(1)
 	}
 
-	yamlFile := os.Args[1]
+	yamlFile := flag.Arg(0)
 	data, err := os.ReadFile(yamlFile)
 	if err != nil {
 		fmt.Printf("Failed to read file: %v\n", err)
@@ -110,14 +116,17 @@ func main() {
 		ID:           "researcher-1",
 		Name:         "Test Researcher",
 		Role:         agents.RoleResearcher,
+		Model:        "llama-3.1-8b-instant",
+		Provider:     "groq",
+		SystemPrompt: "You are a professional researcher. Your goal is to provide detailed research notes. You must output your response as valid JSON with a single key 'response' containing your findings.",
 	})
 	ar.Register(&agents.Agent{
 		ID:           "comedian-1",
 		Name:         "Golang Comedian",
 		Role:         agents.RoleExecutor,
-		Model:        "llama-3.1-8b-instant", // Updated from decommissioned llama3-8b-8192
+		Model:        "llama-3.1-8b-instant",
 		Provider:     "groq",
-		SystemPrompt: "You are a witty stand-up comedian. You must output your response as valid JSON with a single key 'joke' containing your joke string.",
+		SystemPrompt: "You are a witty stand-up comedian. You must output your response as valid JSON with a single key 'response' containing your joke string.",
 	})
 
 	// 5. Create Executor
@@ -153,6 +162,34 @@ func main() {
 		fmt.Printf("[Orch] Task Failed: %s\n", e.TaskID)
 	})
 
+	// Add Interactive Approval for CLI
+	eventBus.Subscribe(events.TaskWaitingForApproval, func(e events.Event) {
+		rec, err := memoryStore.GetTask(e.WorkflowID, e.TaskID)
+		if err != nil {
+			return
+		}
+
+		if *autoApprove {
+			fmt.Printf("\n[Orch] Auto-approving task '%s'\n", e.TaskID)
+			rec.Status = string(core.TaskRunning)
+			_ = memoryStore.UpdateTask(rec)
+			return
+		}
+
+		fmt.Printf("\n[PROMPT] Task '%s' is waiting for approval. Approve? (y/n): ", e.TaskID)
+		var input string
+		fmt.Scanln(&input)
+		if input == "y" || input == "Y" {
+			rec.Status = string(core.TaskRunning)
+			_ = memoryStore.UpdateTask(rec)
+			fmt.Printf("[Orch] Task '%s' approved!\n", e.TaskID)
+		} else if input == "n" || input == "N" {
+			rec.Status = string(core.TaskFailed)
+			_ = memoryStore.UpdateTask(rec)
+			fmt.Printf("[Orch] Task '%s' rejected.\n", e.TaskID)
+		}
+	})
+
 	fmt.Printf("Executing Workflow: %s (%s)\n", workflow.Name, workflow.ID)
 	
 	// 6. Execute Workflow
@@ -162,5 +199,16 @@ func main() {
 	}
 
 	fmt.Println("Execution completed successfully!")
+	
+	// Print Results
+	fmt.Println("\n--- Workflow Results ---")
+	for _, task := range workflow.GetTasks() {
+		fmt.Printf("Task: %s\n", task.ID)
+		fmt.Printf("Status: %s\n", task.Status)
+		outputJSON, _ := json.MarshalIndent(task.Output, "  ", "  ")
+		fmt.Printf("Output: %s\n", string(outputJSON))
+		fmt.Println("-----------------------")
+	}
+
 	time.Sleep(100 * time.Millisecond)
 }

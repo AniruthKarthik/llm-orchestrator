@@ -338,6 +338,13 @@ func (e *Executor) executeTask(
 
 		fmt.Printf("[Executor] Task %s is waiting for approval\n", task.ID)
 
+		e.eventBus.Publish(events.Event{
+			Type:       events.TaskWaitingForApproval,
+			TaskID:     task.ID,
+			WorkflowID: workflow.ID,
+			Timestamp:  time.Now(),
+		})
+
 		// Wait for approval via store update (e.g., from API)
 		for {
 			time.Sleep(1 * time.Second)

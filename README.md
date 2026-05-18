@@ -5,7 +5,7 @@ The LLM Orchestrator is a production-grade, local-first execution engine designe
 ## Installation
 
 ### Prerequisites
-- **Go:** 1.22 or higher.
+- **Go:** 1.25 or higher.
 - **PostgreSQL:** (Optional) If you want persistent storage. You can also use Docker.
 - **API Keys:** You will need API keys for at least one provider (e.g., Groq, OpenAI, Anthropic, or Gemini).
 
