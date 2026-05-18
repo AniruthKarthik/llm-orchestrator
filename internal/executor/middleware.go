@@ -33,3 +33,19 @@ func ApplyWorkflowMiddleware(handler WorkflowHandler, middlewares ...WorkflowMid
 	}
 	return handler
 }
+
+// OutputValidationMiddleware validates task output against its schema.
+func OutputValidationMiddleware(next TaskHandler) TaskHandler {
+	return func(ctx context.Context, execCtx *ExecutionContext, task *core.Task) (map[string]any, error) {
+		output, err := next(ctx, execCtx, task)
+		if err != nil {
+			return output, err
+		}
+
+		if valErr := task.ValidateOutput(output); valErr != nil {
+			return output, valErr
+		}
+
+		return output, nil
+	}
+}

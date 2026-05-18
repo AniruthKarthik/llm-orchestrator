@@ -64,6 +64,7 @@ func main() {
 
 	exec := executor.NewExecutor(wr, eb, s)
 	exec.UseTaskMiddleware(executor.PanicRecoveryMiddleware)
+	exec.UseTaskMiddleware(executor.OutputValidationMiddleware)
 
 	// 5. Start Supervisor
 	sup := executor.NewSupervisor(s, exec, 30*time.Second)

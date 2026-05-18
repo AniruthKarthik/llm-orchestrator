@@ -76,22 +76,23 @@ func TaskToRecord(
 		Status:       string(task.Status),
 		Error:        task.Error,
 		Input:        core.DeepCopyMap(task.Input),
-		Output:       core.DeepCopyMap(task.Output),
-		Dependencies: core.DeepCopyStringSlice(task.Dependencies),
-		CreatedAt:    task.CreatedAt,
-		StartedAt:    task.StartedAt,
-		FinishedAt:   task.FinishedAt,
-		Timeout:      task.Timeout,
-	}
-}
+		Output:        core.DeepCopyMap(task.Output),
+		Dependencies:  core.DeepCopyStringSlice(task.Dependencies),
+		CreatedAt:     task.CreatedAt,
+		StartedAt:     task.StartedAt,
+		FinishedAt:    task.FinishedAt,
+		Timeout:       task.Timeout,
+		OutputSchema:  core.DeepCopyStringMap(task.OutputSchema),
+		}
+		}
 
-func RecordToWorkflow(
-	workflow WorkflowRecord,
-	tasks []TaskRecord,
-) *core.Workflow {
-	runtimeTasks := make(map[string]*core.Task)
+		func RecordToWorkflow(
+		workflow WorkflowRecord,
+		tasks []TaskRecord,
+		) *core.Workflow {
+		runtimeTasks := make(map[string]*core.Task)
 
-	for _, task := range tasks {
+		for _, task := range tasks {
 		runtimeTasks[task.ID] = &core.Task{
 			ID:           task.ID,
 			Name:         task.Name,
@@ -105,8 +106,10 @@ func RecordToWorkflow(
 			StartedAt:    task.StartedAt,
 			FinishedAt:   task.FinishedAt,
 			Timeout:      task.Timeout,
+			OutputSchema: core.DeepCopyStringMap(task.OutputSchema),
 		}
-	}
+		}
+
 
 	return &core.Workflow{
 		ID:          workflow.ID,

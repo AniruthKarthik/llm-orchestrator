@@ -33,11 +33,12 @@ type TaskRecord struct {
 
 	Dependencies []string
 
+	Timeout      time.Duration
+	OutputSchema map[string]string
+
 	CreatedAt  time.Time
 	StartedAt  *time.Time
 	FinishedAt *time.Time
-
-	Timeout time.Duration
 }
 
 // CheckpointRecord represents a saved state of a workflow execution for recovery.

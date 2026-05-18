@@ -140,10 +140,11 @@ func (s *PostgresStore) SaveTask(task TaskRecord) error {
 	ctx := context.Background()
 	inputJSON, _ := json.Marshal(task.Input)
 	outputJSON, _ := json.Marshal(task.Output)
+	schemaJSON, _ := json.Marshal(task.OutputSchema)
 
 	query := `
-		INSERT INTO tasks (id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		INSERT INTO tasks (id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
 	`
 	_, err := s.pool.Exec(ctx, query,
 		task.ID,
@@ -159,6 +160,7 @@ func (s *PostgresStore) SaveTask(task TaskRecord) error {
 		task.StartedAt,
 		task.FinishedAt,
 		int64(task.Timeout),
+		schemaJSON,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save task: %w", err)
@@ -170,10 +172,11 @@ func (s *PostgresStore) UpdateTask(task TaskRecord) error {
 	ctx := context.Background()
 	inputJSON, _ := json.Marshal(task.Input)
 	outputJSON, _ := json.Marshal(task.Output)
+	schemaJSON, _ := json.Marshal(task.OutputSchema)
 
 	query := `
 		UPDATE tasks
-		SET name = $3, description = $4, status = $5, error = $6, input = $7, output = $8, dependencies = $9, started_at = $10, finished_at = $11, timeout = $12
+		SET name = $3, description = $4, status = $5, error = $6, input = $7, output = $8, dependencies = $9, started_at = $10, finished_at = $11, timeout = $12, output_schema = $13
 		WHERE id = $1 AND workflow_id = $2
 	`
 	tag, err := s.pool.Exec(ctx, query,
@@ -189,6 +192,7 @@ func (s *PostgresStore) UpdateTask(task TaskRecord) error {
 		task.StartedAt,
 		task.FinishedAt,
 		int64(task.Timeout),
+		schemaJSON,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update task: %w", err)
@@ -202,12 +206,12 @@ func (s *PostgresStore) UpdateTask(task TaskRecord) error {
 func (s *PostgresStore) GetTask(workflowID string, taskID string) (TaskRecord, error) {
 	ctx := context.Background()
 	query := `
-		SELECT id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout
+		SELECT id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema
 		FROM tasks
 		WHERE id = $1 AND workflow_id = $2
 	`
 	var t TaskRecord
-	var inputJSON, outputJSON []byte
+	var inputJSON, outputJSON, schemaJSON []byte
 	var timeout int64
 	err := s.pool.QueryRow(ctx, query, taskID, workflowID).Scan(
 		&t.ID,
@@ -223,6 +227,7 @@ func (s *PostgresStore) GetTask(workflowID string, taskID string) (TaskRecord, e
 		&t.StartedAt,
 		&t.FinishedAt,
 		&timeout,
+		&schemaJSON,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -232,6 +237,7 @@ func (s *PostgresStore) GetTask(workflowID string, taskID string) (TaskRecord, e
 	}
 	json.Unmarshal(inputJSON, &t.Input)
 	json.Unmarshal(outputJSON, &t.Output)
+	json.Unmarshal(schemaJSON, &t.OutputSchema)
 	t.Timeout = time.Duration(timeout)
 	return t, nil
 }
@@ -239,7 +245,7 @@ func (s *PostgresStore) GetTask(workflowID string, taskID string) (TaskRecord, e
 func (s *PostgresStore) GetWorkflowTasks(workflowID string) ([]TaskRecord, error) {
 	ctx := context.Background()
 	query := `
-		SELECT id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout
+		SELECT id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema
 		FROM tasks
 		WHERE workflow_id = $1
 	`
@@ -252,7 +258,7 @@ func (s *PostgresStore) GetWorkflowTasks(workflowID string) ([]TaskRecord, error
 	var tasks []TaskRecord
 	for rows.Next() {
 		var t TaskRecord
-		var inputJSON, outputJSON []byte
+		var inputJSON, outputJSON, schemaJSON []byte
 		var timeout int64
 		err := rows.Scan(
 			&t.ID,
@@ -268,12 +274,14 @@ func (s *PostgresStore) GetWorkflowTasks(workflowID string) ([]TaskRecord, error
 			&t.StartedAt,
 			&t.FinishedAt,
 			&timeout,
+			&schemaJSON,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan task: %w", err)
 		}
 		json.Unmarshal(inputJSON, &t.Input)
 		json.Unmarshal(outputJSON, &t.Output)
+		json.Unmarshal(schemaJSON, &t.OutputSchema)
 		t.Timeout = time.Duration(timeout)
 		tasks = append(tasks, t)
 	}

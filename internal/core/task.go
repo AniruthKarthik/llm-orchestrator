@@ -33,7 +33,8 @@ type Task struct {
 	FailurePolicy FailurePolicy
 	Attempt       int
 
-	Timeout time.Duration
+	Timeout      time.Duration
+	OutputSchema map[string]string // Key: field name, Value: expected type (e.g., "string", "int", "bool")
 
 	mu sync.RWMutex
 }
@@ -79,10 +80,58 @@ func (t *Task) GetFailurePolicy() FailurePolicy {
 	return t.FailurePolicy
 }
 
+func (t *Task) WithOutputSchema(schema map[string]string) *Task {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.OutputSchema = DeepCopyStringMap(schema)
+	return t
+}
+
 func (t *Task) SetAttempt(attempt int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.Attempt = attempt
+}
+
+func (t *Task) ValidateOutput(output map[string]any) error {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	if t.OutputSchema == nil {
+		return nil
+	}
+
+	for field, expectedType := range t.OutputSchema {
+		val, exists := output[field]
+		if !exists {
+			return fmt.Errorf("missing required output field: %s", field)
+		}
+
+		switch expectedType {
+		case "string":
+			if _, ok := val.(string); !ok {
+				return fmt.Errorf("field %s: expected string, got %T", field, val)
+			}
+		case "int":
+			// Handle different int types that might come from JSON unmarshaling or direct assignment
+			switch val.(type) {
+			case int, int32, int64, float64:
+				// float64 is common if the output came from JSON
+			default:
+				return fmt.Errorf("field %s: expected int, got %T", field, val)
+			}
+		case "bool":
+			if _, ok := val.(bool); !ok {
+				return fmt.Errorf("field %s: expected bool, got %T", field, val)
+			}
+		case "map":
+			if _, ok := val.(map[string]any); !ok {
+				return fmt.Errorf("field %s: expected map, got %T", field, val)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (t *Task) Start() error {

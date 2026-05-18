@@ -60,3 +60,15 @@ func DeepCopyStringSlice(s []string) []string {
 	copy(cp, s)
 	return cp
 }
+
+// DeepCopyStringMap copies a map of strings.
+func DeepCopyStringMap(m map[string]string) map[string]string {
+	if m == nil {
+		return nil
+	}
+	cp := make(map[string]string, len(m))
+	for k, v := range m {
+		cp[k] = v
+	}
+	return cp
+}
