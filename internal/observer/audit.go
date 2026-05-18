@@ -1,34 +1,28 @@
 package observer
 
 import (
-	"fmt"
-	"time"
+	"log/slog"
 
 	"github.com/AniruthKarthik/llm-orchestrator/internal/events"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/store"
 )
 
-// AuditLogger records all system events for security and debugging.
+// AuditLogger records all system events as structured log lines.
+// In a future iteration this can persist to a dedicated audit table in the store.
 type AuditLogger struct {
 	store store.Store
 }
 
 func NewAuditLogger(s store.Store) *AuditLogger {
-	return &AuditLogger{
-		store: s,
-	}
+	return &AuditLogger{store: s}
 }
 
 func (l *AuditLogger) Handle(event events.Event) {
-	// In a real implementation, we would save this to a specialized audit table
-	// For now, we'll just log it to stdout with an "AUDIT" prefix
-	// and potentially save it to the database if we add an AuditRecord type.
-	
-	fmt.Printf("[AUDIT] %s | Workflow: %s | Task: %s | Type: %s | Payload: %v\n",
-		event.Timestamp.Format(time.RFC3339),
-		event.WorkflowID,
-		event.TaskID,
-		event.Type,
-		event.Payload,
+	slog.Info("audit",
+		"event_type", string(event.Type),
+		"workflow_id", event.WorkflowID,
+		"task_id", event.TaskID,
+		"timestamp", event.Timestamp.Format("2006-01-02T15:04:05Z07:00"),
+		"payload", event.Payload,
 	)
 }

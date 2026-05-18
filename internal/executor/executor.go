@@ -3,15 +3,16 @@ package executor
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
+	"github.com/AniruthKarthik/llm-orchestrator/internal/agents"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/core"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/dag"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/events"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/plugin"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/store"
-	"github.com/AniruthKarthik/llm-orchestrator/internal/agents"
 )
 
 type Executor struct {
@@ -309,7 +310,7 @@ func (e *Executor) executeTask(
 					return output, nil
 				}
 				lastErr = err
-				fmt.Printf("[Executor] Fallback: Agent %s failed, trying next... error: %v\n", id, err)
+				slog.Warn("agent fallback", "agent_id", id, "error", err)
 			}
 			return nil, fmt.Errorf("all agents failed: %w", lastErr)
 		}
@@ -344,7 +345,7 @@ func (e *Executor) executeTask(
 			return err
 		}
 
-		fmt.Printf("[Executor] Task %s is waiting for approval\n", task.ID)
+		slog.Info("task waiting for approval", "task_id", task.ID, "workflow_id", workflow.ID)
 
 		e.eventBus.Publish(events.Event{
 			Type:       events.TaskWaitingForApproval,
