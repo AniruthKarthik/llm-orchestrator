@@ -43,6 +43,10 @@ type Store interface {
 	) (CheckpointRecord, error)
 
 	ListWorkflows() ([]WorkflowRecord, error)
+
+	SaveAgent(agent AgentRecord) error
+	GetAgent(agentID string) (AgentRecord, error)
+	ListAgents() ([]AgentRecord, error)
 }
 
 func WorkflowToRecord(
@@ -83,6 +87,7 @@ func TaskToRecord(
 		FinishedAt:    task.FinishedAt,
 		Timeout:       task.Timeout,
 		OutputSchema:  core.DeepCopyStringMap(task.OutputSchema),
+		AgentID:       task.AgentID,
 		}
 		}
 
@@ -107,9 +112,9 @@ func TaskToRecord(
 			FinishedAt:   task.FinishedAt,
 			Timeout:      task.Timeout,
 			OutputSchema: core.DeepCopyStringMap(task.OutputSchema),
+			AgentID:      task.AgentID,
 		}
 		}
-
 
 	return &core.Workflow{
 		ID:          workflow.ID,

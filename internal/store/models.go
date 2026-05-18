@@ -35,10 +35,23 @@ type TaskRecord struct {
 
 	Timeout      time.Duration
 	OutputSchema map[string]string
+	AgentID      string
 
 	CreatedAt  time.Time
 	StartedAt  *time.Time
 	FinishedAt *time.Time
+}
+
+type AgentRecord struct {
+	ID           string
+	Name         string
+	Description  string
+	Role         string
+	SystemPrompt string
+	Model        string
+	Provider     string
+	Tools        []string
+	Config       map[string]any
 }
 
 // CheckpointRecord represents a saved state of a workflow execution for recovery.

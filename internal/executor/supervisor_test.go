@@ -6,11 +6,13 @@ import (
 
 	"github.com/AniruthKarthik/llm-orchestrator/internal/core"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/store"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/agents"
 )
 
 func TestSupervisor_CheckStuckTasks(t *testing.T) {
 	s := store.NewMemoryStore()
-	e := NewExecutor(NewWorkerRegistry(), nil, s)
+	ar := agents.NewAgentRegistry()
+	e := NewExecutor(NewWorkerRegistry(), ar, nil, s)
 	supervisor := NewSupervisor(s, e, 100*time.Millisecond)
 
 	// 1. Setup a stuck task

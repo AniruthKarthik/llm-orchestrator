@@ -58,11 +58,12 @@ func main() {
 	// 4. Initialize Core Components
 	eb := events.NewEventBus(10)
 	wr := executor.NewWorkerRegistry()
+	ar := agents.NewAgentRegistry()
 
 	// Register a dummy worker for testing
 	wr.Register("test-task", &DummyWorker{})
 
-	exec := executor.NewExecutor(wr, eb, s)
+	exec := executor.NewExecutor(wr, ar, eb, s)
 	exec.UseTaskMiddleware(executor.PanicRecoveryMiddleware)
 	exec.UseTaskMiddleware(executor.OutputValidationMiddleware)
 

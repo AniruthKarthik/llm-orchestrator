@@ -143,8 +143,8 @@ func (s *PostgresStore) SaveTask(task TaskRecord) error {
 	schemaJSON, _ := json.Marshal(task.OutputSchema)
 
 	query := `
-		INSERT INTO tasks (id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+		INSERT INTO tasks (id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema, agent_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 	`
 	_, err := s.pool.Exec(ctx, query,
 		task.ID,
@@ -161,6 +161,7 @@ func (s *PostgresStore) SaveTask(task TaskRecord) error {
 		task.FinishedAt,
 		int64(task.Timeout),
 		schemaJSON,
+		task.AgentID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save task: %w", err)
@@ -176,7 +177,7 @@ func (s *PostgresStore) UpdateTask(task TaskRecord) error {
 
 	query := `
 		UPDATE tasks
-		SET name = $3, description = $4, status = $5, error = $6, input = $7, output = $8, dependencies = $9, started_at = $10, finished_at = $11, timeout = $12, output_schema = $13
+		SET name = $3, description = $4, status = $5, error = $6, input = $7, output = $8, dependencies = $9, started_at = $10, finished_at = $11, timeout = $12, output_schema = $13, agent_id = $14
 		WHERE id = $1 AND workflow_id = $2
 	`
 	tag, err := s.pool.Exec(ctx, query,
@@ -193,6 +194,7 @@ func (s *PostgresStore) UpdateTask(task TaskRecord) error {
 		task.FinishedAt,
 		int64(task.Timeout),
 		schemaJSON,
+		task.AgentID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update task: %w", err)
@@ -206,7 +208,7 @@ func (s *PostgresStore) UpdateTask(task TaskRecord) error {
 func (s *PostgresStore) GetTask(workflowID string, taskID string) (TaskRecord, error) {
 	ctx := context.Background()
 	query := `
-		SELECT id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema
+		SELECT id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema, agent_id
 		FROM tasks
 		WHERE id = $1 AND workflow_id = $2
 	`
@@ -228,6 +230,7 @@ func (s *PostgresStore) GetTask(workflowID string, taskID string) (TaskRecord, e
 		&t.FinishedAt,
 		&timeout,
 		&schemaJSON,
+		&t.AgentID,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -245,7 +248,7 @@ func (s *PostgresStore) GetTask(workflowID string, taskID string) (TaskRecord, e
 func (s *PostgresStore) GetWorkflowTasks(workflowID string) ([]TaskRecord, error) {
 	ctx := context.Background()
 	query := `
-		SELECT id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema
+		SELECT id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema, agent_id
 		FROM tasks
 		WHERE workflow_id = $1
 	`
@@ -275,6 +278,7 @@ func (s *PostgresStore) GetWorkflowTasks(workflowID string) ([]TaskRecord, error
 			&t.FinishedAt,
 			&timeout,
 			&schemaJSON,
+			&t.AgentID,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan task: %w", err)
@@ -286,6 +290,102 @@ func (s *PostgresStore) GetWorkflowTasks(workflowID string) ([]TaskRecord, error
 		tasks = append(tasks, t)
 	}
 	return tasks, nil
+}
+
+func (s *PostgresStore) SaveAgent(agent AgentRecord) error {
+	ctx := context.Background()
+	toolsJSON, _ := json.Marshal(agent.Tools)
+	configJSON, _ := json.Marshal(agent.Config)
+
+	query := `
+		INSERT INTO agents (id, name, description, role, system_prompt, model, provider, tools, config)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		ON CONFLICT (id) DO UPDATE
+		SET name = $2, description = $3, role = $4, system_prompt = $5, model = $6, provider = $7, tools = $8, config = $9
+	`
+	_, err := s.pool.Exec(ctx, query,
+		agent.ID,
+		agent.Name,
+		agent.Description,
+		agent.Role,
+		agent.SystemPrompt,
+		agent.Model,
+		agent.Provider,
+		toolsJSON,
+		configJSON,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save agent: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) GetAgent(agentID string) (AgentRecord, error) {
+	ctx := context.Background()
+	query := `
+		SELECT id, name, description, role, system_prompt, model, provider, tools, config
+		FROM agents
+		WHERE id = $1
+	`
+	var a AgentRecord
+	var toolsJSON, configJSON []byte
+	err := s.pool.QueryRow(ctx, query, agentID).Scan(
+		&a.ID,
+		&a.Name,
+		&a.Description,
+		&a.Role,
+		&a.SystemPrompt,
+		&a.Model,
+		&a.Provider,
+		&toolsJSON,
+		&configJSON,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return AgentRecord{}, fmt.Errorf("agent not found: %s", agentID)
+		}
+		return AgentRecord{}, fmt.Errorf("failed to get agent: %w", err)
+	}
+	json.Unmarshal(toolsJSON, &a.Tools)
+	json.Unmarshal(configJSON, &a.Config)
+	return a, nil
+}
+
+func (s *PostgresStore) ListAgents() ([]AgentRecord, error) {
+	ctx := context.Background()
+	query := `
+		SELECT id, name, description, role, system_prompt, model, provider, tools, config
+		FROM agents
+	`
+	rows, err := s.pool.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list agents: %w", err)
+	}
+	defer rows.Close()
+
+	var agents []AgentRecord
+	for rows.Next() {
+		var a AgentRecord
+		var toolsJSON, configJSON []byte
+		err := rows.Scan(
+			&a.ID,
+			&a.Name,
+			&a.Description,
+			&a.Role,
+			&a.SystemPrompt,
+			&a.Model,
+			&a.Provider,
+			&toolsJSON,
+			&configJSON,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan agent: %w", err)
+		}
+		json.Unmarshal(toolsJSON, &a.Tools)
+		json.Unmarshal(configJSON, &a.Config)
+		agents = append(agents, a)
+	}
+	return agents, nil
 }
 
 func (s *PostgresStore) SaveCheckpoint(checkpoint CheckpointRecord) error {

@@ -11,10 +11,12 @@ import (
 	"github.com/AniruthKarthik/llm-orchestrator/internal/events"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/plugin"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/store"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/agents"
 )
 
 type Executor struct {
 	registry       *WorkerRegistry
+	agentRegistry  *agents.AgentRegistry
 	pluginRegistry plugin.Registry
 	eventBus       *events.EventBus
 	store          store.Store
@@ -28,11 +30,13 @@ type Executor struct {
 
 func NewExecutor(
 	registry *WorkerRegistry,
+	agentRegistry *agents.AgentRegistry,
 	eventBus *events.EventBus,
 	store store.Store,
 ) *Executor {
 	return &Executor{
 		registry:            registry,
+		agentRegistry:       agentRegistry,
 		pluginRegistry:      plugin.NewDefaultRegistry(),
 		eventBus:            eventBus,
 		store:               store,
@@ -253,15 +257,26 @@ func (e *Executor) executeTask(
 	}
 	defer e.concurrencyLimiter.Release()
 
-	worker, exists := e.registry.Get(task.Name)
-	if !exists {
-		err := fmt.Errorf("worker not found: %s", task.Name)
-		_ = task.Fail(err)
-		_ = e.store.UpdateTask(store.TaskToRecord(workflow.ID, task))
-		return err
-	}
+	var handler TaskHandler
 
-	retryWorker := NewRetryWorkerWrapper(worker, e.eventBus)
+	if task.AgentID != "" {
+		// Agent-based execution
+		agentExec := agents.NewAgentExecutor(e.agentRegistry)
+		handler = func(ctx context.Context, execCtx *ExecutionContext, t *core.Task) (map[string]any, error) {
+			return agentExec.Execute(ctx, t.AgentID, t)
+		}
+	} else {
+		// Worker-based execution
+		worker, exists := e.registry.Get(task.Name)
+		if !exists {
+			err := fmt.Errorf("worker not found: %s", task.Name)
+			_ = task.Fail(err)
+			_ = e.store.UpdateTask(store.TaskToRecord(workflow.ID, task))
+			return err
+		}
+		retryWorker := NewRetryWorkerWrapper(worker, e.eventBus)
+		handler = retryWorker.Execute
+	}
 
 	if err := task.Start(); err != nil {
 		return err
@@ -293,8 +308,8 @@ func (e *Executor) executeTask(
 	middlewares := e.taskMiddlewares
 	e.mu.RUnlock()
 
-	handler := ApplyTaskMiddleware(retryWorker.Execute, middlewares...)
-	output, err := handler(ctx, execCtx, task)
+	finalHandler := ApplyTaskMiddleware(handler, middlewares...)
+	output, err := finalHandler(ctx, execCtx, task)
 
 
 	// Execution Interceptors (After)

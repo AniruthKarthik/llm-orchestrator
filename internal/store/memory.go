@@ -11,6 +11,7 @@ type MemoryStore struct {
 	workflows   map[string]WorkflowRecord
 	tasks       map[string]map[string]TaskRecord
 	checkpoints map[string][]CheckpointRecord
+	agents      map[string]AgentRecord
 
 	mutex sync.RWMutex
 }
@@ -20,6 +21,7 @@ func NewMemoryStore() *MemoryStore {
 		workflows:   make(map[string]WorkflowRecord),
 		tasks:       make(map[string]map[string]TaskRecord),
 		checkpoints: make(map[string][]CheckpointRecord),
+		agents:      make(map[string]AgentRecord),
 	}
 }
 
@@ -175,7 +177,51 @@ func deepCopyTask(t TaskRecord) TaskRecord {
 	cp.Input = core.DeepCopyMap(t.Input)
 	cp.Output = core.DeepCopyMap(t.Output)
 	cp.Dependencies = core.DeepCopyStringSlice(t.Dependencies)
+	cp.OutputSchema = core.DeepCopyStringMap(t.OutputSchema)
 	return cp
+}
+
+func (m *MemoryStore) SaveAgent(agent AgentRecord) error {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	cp := agent
+	cp.Tools = core.DeepCopyStringSlice(agent.Tools)
+	cp.Config = core.DeepCopyMap(agent.Config)
+
+	m.agents[agent.ID] = cp
+	return nil
+}
+
+func (m *MemoryStore) GetAgent(agentID string) (AgentRecord, error) {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	agent, exists := m.agents[agentID]
+	if !exists {
+		return AgentRecord{}, fmt.Errorf("agent not found: %s", agentID)
+	}
+
+	cp := agent
+	cp.Tools = core.DeepCopyStringSlice(agent.Tools)
+	cp.Config = core.DeepCopyMap(agent.Config)
+
+	return cp, nil
+}
+
+func (m *MemoryStore) ListAgents() ([]AgentRecord, error) {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	list := make([]AgentRecord, 0, len(m.agents))
+	for _, agent := range m.agents {
+		cp := agent
+		cp.Tools = core.DeepCopyStringSlice(agent.Tools)
+		cp.Config = core.DeepCopyMap(agent.Config)
+		list = append(list, cp)
+	}
+
+	return list, nil
 }
 
 func (m *MemoryStore) SaveCheckpoint(checkpoint CheckpointRecord) error {
