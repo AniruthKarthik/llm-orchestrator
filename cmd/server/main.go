@@ -12,6 +12,7 @@ import (
 	"github.com/AniruthKarthik/llm-orchestrator/internal/core"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/events"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/executor"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/agents"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/providers"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/providers/anthropic"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/providers/gemini"

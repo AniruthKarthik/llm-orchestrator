@@ -2,10 +2,12 @@ package agents
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 
 	"github.com/AniruthKarthik/llm-orchestrator/internal/core"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/providers"
 )
 
 // AgentRole defines the role of an agent.
@@ -77,7 +79,6 @@ func (r *AgentRegistry) List() []*Agent {
 // AgentExecutor is responsible for executing tasks using an agent.
 type AgentExecutor struct {
 	registry *AgentRegistry
-	// In the future, this will link to LLM workers and Tool runtime
 }
 
 func NewAgentExecutor(r *AgentRegistry) *AgentExecutor {
@@ -92,9 +93,58 @@ func (e *AgentExecutor) Execute(ctx context.Context, agentID string, task *core.
 		return nil, fmt.Errorf("agent not found: %s", agentID)
 	}
 
-	// This is where the actual LLM interaction will happen in Step 2/3
-	fmt.Printf("Agent %s (%s) is executing task: %s\n", agent.Name, agent.Role, task.Name)
-	
+	fmt.Printf("[AgentExecutor] Agent %s (%s) is executing task: %s\n", agent.Name, agent.Role, task.Name)
+
+	if agent.Provider != "" {
+		provider, err := providers.Get(agent.Provider)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get provider for agent %s: %w", agent.Name, err)
+		}
+
+		// Prepare messages
+		messages := []providers.Message{}
+		if agent.SystemPrompt != "" {
+			messages = append(messages, providers.Message{Role: "system", Content: agent.SystemPrompt})
+		}
+		
+		// If task has input prompt
+		if prompt, ok := task.Input["prompt"].(string); ok {
+			messages = append(messages, providers.Message{Role: "user", Content: prompt})
+		} else {
+			// fallback generic prompt
+			messages = append(messages, providers.Message{Role: "user", Content: fmt.Sprintf("Execute task: %s. Description: %s", task.Name, task.Description)})
+		}
+
+		req := providers.GenerateRequest{
+			Model:    agent.Model,
+			Messages: messages,
+		}
+
+		resp, err := provider.Generate(ctx, req)
+		if err != nil {
+			return nil, fmt.Errorf("LLM generation failed: %w", err)
+		}
+
+		result := map[string]any{
+			"status": "success",
+			"agent":  agent.Name,
+			"role":   string(agent.Role),
+		}
+
+		// Try to parse content as JSON to map it to task outputs
+		var jsonOutput map[string]any
+		if err := json.Unmarshal([]byte(resp.Content), &jsonOutput); err == nil {
+			for k, v := range jsonOutput {
+				result[k] = v
+			}
+		} else {
+			result["output"] = resp.Content
+		}
+
+		return result, nil
+	}
+
+	// Fallback to simulated response if no provider is configured
 	return map[string]any{
 		"status": "simulated_success",
 		"agent":  agent.Name,

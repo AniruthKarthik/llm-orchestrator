@@ -7,6 +7,7 @@ import (
 
 	"github.com/AniruthKarthik/llm-orchestrator/internal/core"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/executor"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/agents"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/providers"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/providers/groq"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/store"
@@ -60,6 +61,11 @@ func main() {
 	registry := executor.NewWorkerRegistry()
 	eventBus := events.NewEventBus(5)
 	memoryStore := store.NewMemoryStore()
+	agentRegistry := agents.NewAgentRegistry()
+	artifactRegistry := core.NewArtifactRegistry()
+	memoryRegistry := core.NewMemoryRegistry()
+	toolRegistry := core.NewToolRegistry()
+	toolPolicy := core.NewToolPolicy()
 
 	// 2. Register worker
 	groqProvider := groq.NewGroqProvider(apiKey)
@@ -91,7 +97,7 @@ func main() {
 	}
 
 	// 4. Execute workflow
-	exec := executor.NewExecutor(registry, eventBus, memoryStore)
+	exec := executor.NewExecutor(registry, agentRegistry, artifactRegistry, memoryRegistry, toolRegistry, toolPolicy, eventBus, memoryStore)
 	
 	fmt.Println("Starting workflow execution...")
 	err := exec.Execute(workflow)

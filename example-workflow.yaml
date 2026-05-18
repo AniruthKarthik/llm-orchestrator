@@ -1,0 +1,12 @@
+id: mvp-test
+name: "MVP AI Workflow"
+description: "A simple workflow that uses Groq to generate a response"
+tasks:
+  - id: generate-joke
+    name: "joke-task"
+    description: "Generate a programming joke"
+    agent_id: "comedian-1"
+    input:
+      prompt: "Tell me a short joke about Golang developers."
+    output_schema:
+      joke: "string"
