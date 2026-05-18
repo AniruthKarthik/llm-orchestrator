@@ -292,7 +292,7 @@ func (e *Executor) executeTask(
 
 	if len(agentIDs) > 0 {
 		// Agent-based execution with fallback
-		agentExec := agents.NewAgentExecutor(e.agentRegistry, e.artifactRegistry)
+		agentExec := agents.NewAgentExecutor(e.agentRegistry, e.artifactRegistry, e.eventBus)
 		handler = func(ctx context.Context, execCtx *ExecutionContext, t *core.Task) (map[string]any, error) {
 			var lastErr error
 			for _, id := range agentIDs {

@@ -80,12 +80,14 @@ func (r *AgentRegistry) List() []*Agent {
 type AgentExecutor struct {
 	registry         *AgentRegistry
 	artifactRegistry *core.ArtifactRegistry
+	eventBus         *events.EventBus
 }
 
-func NewAgentExecutor(r *AgentRegistry, ar *core.ArtifactRegistry) *AgentExecutor {
+func NewAgentExecutor(r *AgentRegistry, ar *core.ArtifactRegistry, eb *events.EventBus) *AgentExecutor {
 	return &AgentExecutor{
 		registry:         r,
 		artifactRegistry: ar,
+		eventBus:         eb,
 	}
 }
 
@@ -145,6 +147,22 @@ func (e *AgentExecutor) Execute(ctx context.Context, agentID string, task *core.
 		resp, err := provider.Generate(ctx, req)
 		if err != nil {
 			return nil, fmt.Errorf("LLM generation failed: %w", err)
+		}
+
+		// Publish token usage
+		if e.eventBus != nil {
+			e.eventBus.Publish(events.Event{
+				Type:       events.TaskTokenUsage,
+				WorkflowID: task.WorkflowID,
+				TaskID:     task.ID,
+				Timestamp:  time.Now(),
+				Payload: map[string]any{
+					"model":             resp.Model,
+					"prompt_tokens":     resp.Usage.PromptTokens,
+					"completion_tokens": resp.Usage.CompletionTokens,
+					"total_tokens":      resp.Usage.TotalTokens,
+				},
+			})
 		}
 
 		result := map[string]any{

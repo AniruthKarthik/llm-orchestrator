@@ -11,6 +11,7 @@ const (
 	TaskRetried   EventType = "TASK_RETRIED"
 	TaskCompleted EventType = "TASK_COMPLETED"
 	TaskFailed    EventType = "TASK_FAILED"
+	TaskTokenUsage EventType = "TASK_TOKEN_USAGE"
 
 	StageStarted   EventType = "STAGE_STARTED"
 	StageCompleted EventType = "STAGE_COMPLETED"

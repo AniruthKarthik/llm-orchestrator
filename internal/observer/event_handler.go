@@ -1,45 +1,48 @@
 package observer
 
 import (
-	"time"
+	"fmt"
 
 	"github.com/AniruthKarthik/llm-orchestrator/internal/events"
 )
 
-// EventMetricsHandler listens to events and updates metrics.
-type EventMetricsHandler struct {
+// MetricsEventHandler translates system events into metrics.
+type MetricsEventHandler struct {
 	collector MetricsCollector
 }
 
-func NewEventMetricsHandler(collector MetricsCollector) *EventMetricsHandler {
-	return &EventMetricsHandler{collector: collector}
+func NewMetricsEventHandler(c MetricsCollector) *MetricsEventHandler {
+	return &MetricsEventHandler{
+		collector: c,
+	}
 }
 
-func (h *EventMetricsHandler) Handle(event events.Event) {
-	labels := map[string]string{
-		"workflow_id": event.WorkflowID,
-		"task_id":     event.TaskID,
-		"type":        string(event.Type),
-	}
-
-	h.collector.Inc("events_total", labels)
-
+func (h *MetricsEventHandler) Handle(event events.Event) {
 	switch event.Type {
+	case events.TaskStarted:
+		h.collector.Inc("tasks_started_total", map[string]string{
+			"workflow_id": event.WorkflowID,
+		})
 	case events.TaskCompleted:
-		if duration, ok := event.Payload["duration"].(time.Duration); ok {
-			h.collector.Observe("task_duration_seconds", duration.Seconds(), labels)
+		h.collector.Inc("tasks_completed_total", map[string]string{
+			"workflow_id": event.WorkflowID,
+		})
+	case events.TaskFailed:
+		h.collector.Inc("tasks_failed_total", map[string]string{
+			"workflow_id": event.WorkflowID,
+		})
+	case events.TaskTokenUsage:
+		if promptTokens, ok := event.Payload["prompt_tokens"].(int); ok {
+			h.collector.Observe("prompt_tokens_total", float64(promptTokens), map[string]string{
+				"workflow_id": event.WorkflowID,
+				"model":       fmt.Sprintf("%v", event.Payload["model"]),
+			})
 		}
-	case events.WorkflowCompleted:
-		h.collector.Inc("workflows_completed_total", labels)
-	case events.WorkflowFailed:
-		h.collector.Inc("workflows_failed_total", labels)
+		if completionTokens, ok := event.Payload["completion_tokens"].(int); ok {
+			h.collector.Observe("completion_tokens_total", float64(completionTokens), map[string]string{
+				"workflow_id": event.WorkflowID,
+				"model":       fmt.Sprintf("%v", event.Payload["model"]),
+			})
+		}
 	}
-}
-
-// RegisterWithBus attaches the handler to the event bus.
-func (h *EventMetricsHandler) RegisterWithBus(bus *events.EventBus) {
-	bus.Subscribe(events.TaskCompleted, h.Handle)
-	bus.Subscribe(events.TaskFailed, h.Handle)
-	bus.Subscribe(events.WorkflowCompleted, h.Handle)
-	bus.Subscribe(events.WorkflowFailed, h.Handle)
 }

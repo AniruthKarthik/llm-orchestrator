@@ -132,9 +132,16 @@ func main() {
 
 	// Listen to events
 	auditLogger := observer.NewAuditLogger(memoryStore)
+	metricsHandler := observer.NewMetricsEventHandler(observer.NewDefaultMetricsCollector())
+	
 	eventBus.Subscribe(events.TaskStarted, auditLogger.Handle)
 	eventBus.Subscribe(events.TaskCompleted, auditLogger.Handle)
 	eventBus.Subscribe(events.TaskFailed, auditLogger.Handle)
+	
+	eventBus.Subscribe(events.TaskStarted, metricsHandler.Handle)
+	eventBus.Subscribe(events.TaskCompleted, metricsHandler.Handle)
+	eventBus.Subscribe(events.TaskFailed, metricsHandler.Handle)
+	eventBus.Subscribe(events.TaskTokenUsage, metricsHandler.Handle)
 
 	eventBus.Subscribe(events.TaskStarted, func(e events.Event) {
 		fmt.Printf("[Orch] Task Started: %s\n", e.TaskID)
