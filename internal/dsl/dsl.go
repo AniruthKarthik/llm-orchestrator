@@ -23,8 +23,9 @@ type TaskDefinition struct {
 	Description  string            `json:"description" yaml:"description"`
 	Input        map[string]any    `json:"input" yaml:"input"`
 	Dependencies []string          `json:"dependencies" yaml:"dependencies"`
-	AgentID      string            `json:"agent_id" yaml:"agent_id"`
-	OutputSchema map[string]string `json:"output_schema" yaml:"output_schema"`
+	AgentID          string            `json:"agent_id" yaml:"agent_id"`
+	OutputSchema     map[string]string `json:"output_schema" yaml:"output_schema"`
+	RequiresApproval bool              `json:"requires_approval" yaml:"requires_approval"`
 }
 
 // Parser defines the interface for parsing workflow definitions.
@@ -67,6 +68,9 @@ func (c *Compiler) Compile(def *WorkflowDefinition) (*core.Workflow, error) {
 		}
 		if len(td.OutputSchema) > 0 {
 			task.WithOutputSchema(td.OutputSchema)
+		}
+		if td.RequiresApproval {
+			task.WithApproval(true)
 		}
 		if err := workflow.AddTask(task); err != nil {
 			return nil, fmt.Errorf("failed to add task %s: %w", td.ID, err)

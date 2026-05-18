@@ -26,6 +26,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /workflows", s.handleCreateWorkflow)
 	mux.HandleFunc("GET /workflows/{id}", s.handleGetWorkflow)
 	mux.HandleFunc("POST /workflows/{id}/execute", s.handleExecuteWorkflow)
+	mux.HandleFunc("POST /workflows/{id}/tasks/{taskID}/approve", s.handleApproveTask)
 	return mux
 }
 
@@ -110,4 +111,28 @@ func (s *Server) handleExecuteWorkflow(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	w.WriteHeader(http.StatusAccepted)
+}
+
+func (s *Server) handleApproveTask(w http.ResponseWriter, r *http.Request) {
+	wfID := r.PathValue("id")
+	taskID := r.PathValue("taskID")
+
+	rec, err := s.store.GetTask(wfID, taskID)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	if rec.Status != string(core.TaskWaitingForApproval) {
+		http.Error(w, "task is not waiting for approval", http.StatusBadRequest)
+		return
+	}
+
+	rec.Status = string(core.TaskRunning)
+	if err := s.store.UpdateTask(rec); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 }

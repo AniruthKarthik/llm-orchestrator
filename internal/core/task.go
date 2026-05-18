@@ -9,10 +9,11 @@ import (
 type TaskStatus string
 
 const (
-	TaskPending   TaskStatus = "PENDING"
-	TaskRunning   TaskStatus = "RUNNING"
-	TaskCompleted TaskStatus = "COMPLETED"
-	TaskFailed    TaskStatus = "FAILED"
+	TaskPending            TaskStatus = "PENDING"
+	TaskRunning            TaskStatus = "RUNNING"
+	TaskCompleted          TaskStatus = "COMPLETED"
+	TaskFailed             TaskStatus = "FAILED"
+	TaskWaitingForApproval TaskStatus = "WAITING_FOR_APPROVAL"
 )
 
 type Task struct {
@@ -37,6 +38,8 @@ type Task struct {
 	Timeout      time.Duration
 	OutputSchema map[string]string // Key: field name, Value: expected type (e.g., "string", "int", "bool")
 	AgentID      string            // Optional: ID of the agent assigned to this task
+
+	RequiresApproval bool // If true, task will wait for human approval before finishing or starting
 
 	mu sync.RWMutex
 }
@@ -142,6 +145,35 @@ func (t *Task) ValidateOutput(output map[string]any) error {
 		}
 	}
 
+	return nil
+}
+
+func (t *Task) WithApproval(required bool) *Task {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.RequiresApproval = required
+	return t
+}
+
+func (t *Task) WaitForApproval() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.Status != TaskRunning {
+		return fmt.Errorf("cannot wait for approval in %s status", t.Status)
+	}
+	t.Status = TaskWaitingForApproval
+	return nil
+}
+
+func (t *Task) Approve() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.Status != TaskWaitingForApproval {
+		return fmt.Errorf("cannot approve task in %s status", t.Status)
+	}
+	t.Status = TaskRunning
 	return nil
 }
 

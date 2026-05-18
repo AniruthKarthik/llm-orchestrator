@@ -328,6 +328,34 @@ func (e *Executor) executeTask(
 		return err
 	}
 
+	if task.RequiresApproval {
+		if err := task.WaitForApproval(); err != nil {
+			return err
+		}
+		if err := e.store.UpdateTask(store.TaskToRecord(workflow.ID, task)); err != nil {
+			return err
+		}
+
+		fmt.Printf("[Executor] Task %s is waiting for approval\n", task.ID)
+
+		// Wait for approval via store update (e.g., from API)
+		for {
+			time.Sleep(1 * time.Second)
+			rec, _ := e.store.GetTask(workflow.ID, task.ID)
+			if rec.Status == string(core.TaskRunning) {
+				// Approved externally
+				_ = task.Approve() // Update local state
+				break
+			}
+			// Check for timeout or cancellation
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			default:
+			}
+		}
+	}
+
 	e.eventBus.Publish(events.Event{
 		Type:       events.TaskStarted,
 		TaskID:     task.ID,
