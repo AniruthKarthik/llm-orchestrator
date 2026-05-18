@@ -1,4 +1,4 @@
-import { useWebSocket } from '@/hooks/useWebSocket';
+import { useWsContext } from '@/context/WsContext';
 import { useWorkflowStore } from '@/store/useWorkflowStore';
 import { useEffect, useState } from 'react';
 import {
@@ -17,7 +17,7 @@ import api from '@/api/client';
 import { cn } from '@/lib/utils';
 
 export default function ExecutionsPage() {
-  const { events, isConnected } = useWebSocket();
+  const { events, isConnected } = useWsContext();
   const { providers, fetchProviders } = useWorkflowStore();
   const [approving, setApproving] = useState<string | null>(null);
   const [approvalError, setApprovalError] = useState<string | null>(null);

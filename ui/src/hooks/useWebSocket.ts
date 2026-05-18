@@ -1,16 +1,31 @@
-import { useEffect, useRef, useState } from 'react';
-import type { Event } from '@/types';
+import { useEffect, useRef, useState, useCallback } from 'react';
 
-const WS_RECONNECT_DELAY_MS = 5000;
-const MAX_EVENTS = 500; // Prevent unbounded memory growth
+export interface WsEvent {
+  type: string;
+  workflowId: string;
+  taskId?: string;
+  timestamp: string;
+  payload?: Record<string, unknown>;
+}
+
+const WS_RECONNECT_DELAY_MS = 3000;
+const MAX_EVENTS = 200;
 
 export function useWebSocket() {
-  const [events, setEvents] = useState<Event[]>([]);
+  const [events, setEvents] = useState<WsEvent[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Tracks whether the hook is still mounted so we don't reconnect after unmount
   const isMounted = useRef(true);
+  // callbacks registered by consumers (e.g. pages that want live updates)
+  const listenersRef = useRef<Array<(e: WsEvent) => void>>([]);
+
+  const addListener = useCallback((fn: (e: WsEvent) => void) => {
+    listenersRef.current.push(fn);
+    return () => {
+      listenersRef.current = listenersRef.current.filter((l) => l !== fn);
+    };
+  }, []);
 
   useEffect(() => {
     isMounted.current = true;
@@ -20,9 +35,7 @@ export function useWebSocket() {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) return;
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      // VITE_WS_URL should be just the host+path without protocol, e.g. "localhost:8080/api/v1/ws"
-      const host = import.meta.env.VITE_WS_URL || 'localhost:8080/api/v1/ws';
-      // Strip protocol prefix if the env var accidentally includes one
+      const host = import.meta.env.VITE_WS_URL || `${window.location.host}/api/v1/ws`;
       const cleanHost = host.replace(/^wss?:\/\//, '');
       const url = `${protocol}//${cleanHost}`;
 
@@ -30,20 +43,19 @@ export function useWebSocket() {
       wsRef.current = socket;
 
       socket.onopen = () => {
-        if (!isMounted.current) {
-          socket.close();
-          return;
-        }
+        if (!isMounted.current) { socket.close(); return; }
         setIsConnected(true);
       };
 
-      socket.onmessage = (event) => {
+      socket.onmessage = (msg) => {
         try {
-          const data = JSON.parse(event.data) as Event;
+          const data = JSON.parse(msg.data) as WsEvent;
           setEvents((prev) => {
             const next = [...prev, data];
             return next.length > MAX_EVENTS ? next.slice(next.length - MAX_EVENTS) : next;
           });
+          // Notify all active page listeners
+          listenersRef.current.forEach((fn) => fn(data));
         } catch (err) {
           console.warn('WebSocket: failed to parse message', err);
         }
@@ -55,27 +67,21 @@ export function useWebSocket() {
         reconnectTimer.current = setTimeout(connect, WS_RECONNECT_DELAY_MS);
       };
 
-      socket.onerror = () => {
-        // onclose fires after onerror, which handles reconnect
-        socket.close();
-      };
+      socket.onerror = () => { socket.close(); };
     }
 
     connect();
 
     return () => {
       isMounted.current = false;
-      if (reconnectTimer.current) {
-        clearTimeout(reconnectTimer.current);
-        reconnectTimer.current = null;
-      }
+      if (reconnectTimer.current) { clearTimeout(reconnectTimer.current); }
       if (wsRef.current) {
-        wsRef.current.onclose = null; // Prevent reconnect trigger on intentional close
+        wsRef.current.onclose = null;
         wsRef.current.close();
         wsRef.current = null;
       }
     };
-  }, []); // Intentionally empty — connect once on mount
+  }, []);
 
-  return { events, isConnected };
+  return { events, isConnected, addListener };
 }

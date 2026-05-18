@@ -146,6 +146,12 @@ func (e *Executor) execute(
 		return err
 	}
 
+	e.eventBus.Publish(events.Event{
+		Type:       events.WorkflowStarted,
+		WorkflowID: workflow.ID,
+		Timestamp:  time.Now(),
+	})
+
 	planner := dag.NewTopologicalPlanner()
 	plan, err := planner.BuildExecutionPlan(workflow)
 	if err != nil {
@@ -223,6 +229,15 @@ func (e *Executor) execute(
 				store.WorkflowToRecord(workflow),
 			)
 
+			e.eventBus.Publish(events.Event{
+				Type:       events.WorkflowFailed,
+				WorkflowID: workflow.ID,
+				Timestamp:  time.Now(),
+				Payload: map[string]any{
+					"error": stageErr.Error(),
+				},
+			})
+
 			return stageErr
 		}
 
@@ -245,6 +260,12 @@ func (e *Executor) execute(
 	); err != nil {
 		return err
 	}
+
+	e.eventBus.Publish(events.Event{
+		Type:       events.WorkflowCompleted,
+		WorkflowID: workflow.ID,
+		Timestamp:  time.Now(),
+	})
 
 	return nil
 }

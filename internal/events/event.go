@@ -5,15 +5,15 @@ import (
 )
 
 type Event struct {
-	ID   string
-	Type EventType
+	ID   string    `json:"id,omitempty"`
+	Type EventType `json:"type"`
 
-	WorkflowID string
-	TaskID     string
+	WorkflowID string `json:"workflowId"`
+	TaskID     string `json:"taskId,omitempty"`
 
-	Timestamp time.Time
+	Timestamp time.Time `json:"timestamp"`
 
-	Payload map[string]any
+	Payload map[string]any `json:"payload,omitempty"`
 }
 
 func NewEvent(

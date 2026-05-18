@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   ReactFlow,
@@ -17,10 +17,12 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import TaskNode from '@/components/builder/TaskNode';
-import { Save, Play, Plus, ArrowLeft, Settings2, Loader2, AlertCircle } from 'lucide-react';
+import { Save, Play, Plus, ArrowLeft, Settings2, Loader2, AlertCircle, Terminal } from 'lucide-react';
 import { useWorkflowStore } from '@/store/useWorkflowStore';
 import api from '@/api/client';
 import { cn } from '@/lib/utils';
+import { useWsContext } from '@/context/WsContext';
+import type { WsEvent } from '@/hooks/useWebSocket';
 
 const nodeTypes = {
   task: TaskNode,
@@ -30,6 +32,7 @@ export default function WorkflowBuilderPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { providers, fetchProviders, executeWorkflow } = useWorkflowStore();
+  const { addListener } = useWsContext();
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -43,12 +46,71 @@ export default function WorkflowBuilderPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [savedWorkflowId, setSavedWorkflowId] = useState<string | null>(id !== 'new' ? id ?? null : null);
 
+  // Live execution log
+  interface ExecLog { type: string; taskId?: string; msg: string; time: string }
+  const [execLogs, setExecLogs] = useState<ExecLog[]>([]);
+  const [showExecPanel, setShowExecPanel] = useState(false);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     fetchProviders();
     if (id && id !== 'new') {
       loadWorkflow(id);
     }
   }, [id, fetchProviders]);
+
+  // Subscribe to WS events for this workflow
+  useEffect(() => {
+    const currentWfId = savedWorkflowId;
+    if (!currentWfId) return;
+
+    const unsubscribe = addListener((e: WsEvent) => {
+      if (e.workflowId !== currentWfId) return;
+
+      const time = new Date().toLocaleTimeString();
+      let msg = '';
+
+      switch (e.type) {
+        case 'WORKFLOW_STARTED':   msg = 'Workflow execution started'; break;
+        case 'WORKFLOW_COMPLETED': msg = '✓ Workflow completed successfully'; break;
+        case 'WORKFLOW_FAILED':    msg = `✗ Workflow failed: ${(e.payload?.error as string) ?? 'unknown error'}`; break;
+        case 'TASK_STARTED':       msg = `Task started: ${e.taskId}`; break;
+        case 'TASK_COMPLETED':     msg = `✓ Task completed: ${e.taskId}`; break;
+        case 'TASK_FAILED': {
+          const errMsg = (e.payload?.error as string) ?? 'unknown error';
+          msg = `✗ Task failed: ${e.taskId} — ${errMsg}`;
+          break;
+        }
+        case 'TASK_WAITING_FOR_APPROVAL': msg = `⏸ Task waiting for approval: ${e.taskId}`; break;
+        default: msg = `${e.type} — task: ${e.taskId ?? 'n/a'}`;
+      }
+
+      setExecLogs((prev) => [...prev, { type: e.type, taskId: e.taskId, msg, time }]);
+
+      // Update node status on canvas
+      if (e.taskId) {
+        const statusMap: Record<string, string> = {
+          TASK_STARTED: 'RUNNING',
+          TASK_COMPLETED: 'COMPLETED',
+          TASK_FAILED: 'FAILED',
+          TASK_WAITING_FOR_APPROVAL: 'WAITING_FOR_APPROVAL',
+        };
+        const newStatus = statusMap[e.type];
+        if (newStatus) {
+          setNodes((nds) =>
+            nds.map((n) =>
+              n.id === e.taskId ? { ...n, data: { ...n.data, status: newStatus } } : n
+            )
+          );
+        }
+      }
+
+      // Scroll to bottom of log
+      setTimeout(() => logsEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+    });
+
+    return unsubscribe;
+  }, [savedWorkflowId, addListener]);
 
   const loadWorkflow = async (wfId: string) => {
     setLoadError(null);
@@ -218,14 +280,26 @@ export default function WorkflowBuilderPage() {
 
   const handleExecute = async () => {
     if (!savedWorkflowId || id === 'new') {
-      setSaveError('Please save the workflow before executing.');
+      setSaveError('Save the workflow first before executing.');
+      return;
+    }
+    // Validate tasks have provider+model set
+    const unconfigured = nodes.filter(
+      (n) => !(n.data.provider as string) || !(n.data.model as string)
+    );
+    if (unconfigured.length > 0) {
+      setSaveError(
+        `${unconfigured.length} task(s) have no provider/model configured. Click each node and set Provider and Model in the Config tab.`
+      );
       return;
     }
     setIsExecuting(true);
     setSaveError(null);
+    setExecLogs([]);
+    setShowExecPanel(true);
     const ok = await executeWorkflow(savedWorkflowId);
     if (!ok) {
-      setSaveError('Failed to start workflow execution. Check provider configuration.');
+      setSaveError('Failed to start execution. Check that at least one LLM provider API key is set on the server.');
     }
     setIsExecuting(false);
   };
@@ -320,6 +394,50 @@ export default function WorkflowBuilderPage() {
             </Panel>
           </ReactFlow>
         </div>
+
+        {/* Execution Log Panel */}
+        {showExecPanel && (
+          <div className="border-l border-border bg-card flex flex-col shrink-0 z-10"
+               style={{ width: '340px' }}>
+            <div className="h-12 border-b border-border flex items-center justify-between px-4 shrink-0 bg-muted/30">
+              <h3 className="font-semibold text-sm flex items-center gap-2">
+                <Terminal size={14} className="text-muted-foreground" />
+                Execution Log
+              </h3>
+              <button onClick={() => setShowExecPanel(false)}
+                className="text-muted-foreground hover:text-foreground p-1 rounded hover:bg-secondary text-xs">
+                ✕
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 space-y-2 font-mono text-[11px]">
+              {execLogs.length === 0 ? (
+                <div className="text-muted-foreground text-center py-8 text-xs font-sans">
+                  <Loader2 size={16} className="animate-spin mx-auto mb-2" />
+                  Waiting for events...
+                </div>
+              ) : (
+                execLogs.map((log, i) => {
+                  const isError = log.type.includes('FAILED');
+                  const isOk = log.type.includes('COMPLETED');
+                  const isRunning = log.type.includes('STARTED');
+                  return (
+                    <div key={i} className={cn(
+                      'flex gap-2 items-start p-2 rounded text-[11px] border',
+                      isError  ? 'bg-red-500/5 border-red-500/20 text-red-700'
+                      : isOk   ? 'bg-green-500/5 border-green-500/20 text-green-700'
+                      : isRunning ? 'bg-blue-500/5 border-blue-500/20 text-blue-700'
+                      : 'bg-muted/30 border-border text-muted-foreground'
+                    )}>
+                      <span className="shrink-0 opacity-60">{log.time}</span>
+                      <span className="break-all">{log.msg}</span>
+                    </div>
+                  );
+                })
+              )}
+              <div ref={logsEndRef} />
+            </div>
+          </div>
+        )}
 
         {/* Task Properties Inspector */}
         {selectedNode && (
