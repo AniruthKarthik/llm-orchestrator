@@ -25,7 +25,9 @@ func TestExecutor_AgentExecution(t *testing.T) {
 	eb := events.NewEventBus(10)
 	art := core.NewArtifactRegistry()
 	mem := core.NewMemoryRegistry()
-	e := NewExecutor(wr, ar, art, mem, eb, s)
+	tr := core.NewToolRegistry()
+	tp := core.NewToolPolicy()
+	e := NewExecutor(wr, ar, art, mem, tr, tp, eb, s)
 
 	// 2. Create a task assigned to the agent
 	task := core.NewTask("t1", "agent-task", "desc", nil, nil).WithAgentID("agent-1")
@@ -40,7 +42,7 @@ func TestExecutor_AgentExecution(t *testing.T) {
 	s.SaveTask(store.TaskToRecord(workflow.ID, task))
 
 	// 3. Execute
-	execCtx := NewExecutionContext("wf-1", art, mem)
+	execCtx := NewExecutionContext("wf-1", art, mem, tr, tp)
 	err := e.executeTask(context.Background(), execCtx, workflow, task)
 	if err != nil {
 		t.Fatalf("executeTask failed: %v", err)

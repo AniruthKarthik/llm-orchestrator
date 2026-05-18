@@ -20,7 +20,9 @@ func TestPanicRecoveryMiddleware(t *testing.T) {
 	ctx := context.Background()
 	art := core.NewArtifactRegistry()
 	mem := core.NewMemoryRegistry()
-	execCtx := NewExecutionContext("wf-1", art, mem)
+	tr := core.NewToolRegistry()
+	tp := core.NewToolPolicy()
+	execCtx := NewExecutionContext("wf-1", art, mem, tr, tp)
 	task := core.NewTask("t1", "test", "desc", nil, nil)
 
 	output, err := middleware(ctx, execCtx, task)
