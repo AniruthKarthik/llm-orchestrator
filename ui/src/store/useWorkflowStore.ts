@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Workflow, Provider, Agent, Artifact, Task } from '@/types';
 import api from '@/api/client';
+import { toast } from '@/store/useToastStore';
 
 // Per-resource slice to avoid cross-page loading/error state bleed
 interface ResourceState<T> {
@@ -145,10 +146,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
           data: s.workflows.data.filter((w) => w.id !== id),
         },
       }));
+      toast.success('Workflow deleted successfully.');
       return true;
     } catch (error: unknown) {
       const msg = extractErrorMessage(error);
       set((s) => ({ workflows: { ...s.workflows, error: msg } }));
+      toast.error(`Delete failed: ${msg}`);
       return false;
     }
   },
@@ -156,12 +159,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   executeWorkflow: async (id) => {
     try {
       await api.post(`/workflows/${id}/execute`);
+      toast.success('Workflow execution started.');
       // Refresh to get updated status
       setTimeout(() => get().fetchWorkflows(), 1000);
       return true;
     } catch (error: unknown) {
       const msg = extractErrorMessage(error);
       set((s) => ({ workflows: { ...s.workflows, error: msg } }));
+      toast.error(`Execution failed: ${msg}`);
       return false;
     }
   },
