@@ -10,11 +10,14 @@ import {
   Users,
   HardDrive,
   ListTodo,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { WsContext } from '@/context/WsContext';
 import { useStorageMode } from '@/hooks/useStorageMode';
+import { useTheme } from '@/hooks/useTheme';
 import { InMemoryBanner } from '@/components/ui/InMemoryBanner';
 import { toast } from '@/store/useToastStore';
 
@@ -44,6 +47,7 @@ export const DashboardLayout = ({ children }: { children: React.ReactNode }) => 
   const location = useLocation();
   const { isConnected, events, addListener } = useWebSocket();
   const storageMode = useStorageMode();
+  const { theme, toggleTheme } = useTheme();
 
   const primaryItems = [
     { icon: <LayoutDashboard size={16} />, label: 'Dashboard', to: '/' },
@@ -159,6 +163,13 @@ export const DashboardLayout = ({ children }: { children: React.ReactNode }) => 
             </span>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              onClick={toggleTheme}
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors border border-border"
+              title={theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode'}
+            >
+              {theme === 'light' ? <Moon size={16} /> : <Sun size={16} />}
+            </button>
             <div
               className={cn(
                 'flex items-center gap-1.5 px-2 py-1 rounded border text-[10px] font-semibold',

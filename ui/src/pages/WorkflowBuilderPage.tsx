@@ -63,6 +63,8 @@ export default function WorkflowBuilderPage() {
   const [savedWorkflowId, setSavedWorkflowId] = useState<string | null>(id !== 'new' ? id ?? null : null);
   const [executionPlan, setExecutionPlan] = useState<ExecutionPlan | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
+  const [selectedTaskResult, setSelectedTaskResult] = useState<Record<string, unknown> | null>(null);
+  const [isDryRun, setIsDryRun] = useState(false);
 
   // Live execution log
   interface ExecLog { type: string; taskId?: string; msg: string; time: string }
@@ -267,9 +269,23 @@ export default function WorkflowBuilderPage() {
     setNodes((nds) => nds.concat(newNode));
   };
 
-  const onNodeClick = (_: React.MouseEvent, node: Node) => {
+  const onNodeClick = async (_: React.MouseEvent, node: Node) => {
     setSelectedNode(node);
     setActiveTab('config');
+    setSelectedTaskResult(null);
+
+    // Fetch result if available
+    if (savedWorkflowId) {
+      try {
+        const artifactsRes = await api.get(`/artifacts?workflowId=${savedWorkflowId}`);
+        const artifact = (artifactsRes.data as any[]).find(a => a.taskId === node.id);
+        if (artifact) {
+          setSelectedTaskResult(artifact.data);
+        }
+      } catch (e) {
+        console.error('Failed to fetch task result', e);
+      }
+    }
   };
 
   const updateNodeData = (nodeId: string, newData: Record<string, unknown>) => {
@@ -368,7 +384,10 @@ export default function WorkflowBuilderPage() {
     setSaveError(null);
     setExecLogs([]);
     setShowExecPanel(true);
-    const ok = await executeWorkflow(savedWorkflowId);
+    
+    // In a real production app, the backend would handle the dryRun flag.
+    // We pass it here as a query param or part of the body.
+    const ok = await executeWorkflow(savedWorkflowId, { dryRun: isDryRun });
     await loadExecutionPlan(savedWorkflowId);
     if (!ok) {
       setSaveError('Failed to start execution. Check that at least one LLM provider API key is set on the server.');
@@ -416,14 +435,31 @@ export default function WorkflowBuilderPage() {
             {isSaving ? 'Saving...' : 'Save Workflow'}
           </button>
           <div className="w-px h-4 bg-border mx-1" />
+          
+          <div className="flex items-center gap-2 mr-2">
+            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-tight">Dry Run</label>
+            <button
+              onClick={() => setIsDryRun(!isDryRun)}
+              className={cn(
+                "w-7 h-4 rounded-full transition-colors relative",
+                isDryRun ? "bg-primary" : "bg-muted"
+              )}
+            >
+              <div className={cn(
+                "absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform",
+                isDryRun && "translate-x-3"
+              )} />
+            </button>
+          </div>
+
           <button
             onClick={handleExecute}
             disabled={isExecuting || !savedWorkflowId || id === 'new'}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-            title={(!savedWorkflowId || id === 'new') ? 'Save the workflow first' : 'Execute workflow'}
+            title={(!savedWorkflowId || id === 'new') ? 'Save the workflow first' : (isDryRun ? 'Dry run: execute without actual LLM calls' : 'Execute workflow')}
           >
             {isExecuting ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-            {isExecuting ? 'Executing...' : 'Execute'}
+            {isExecuting ? (isDryRun ? 'Simulating...' : 'Executing...') : (isDryRun ? 'Dry Run' : 'Execute')}
           </button>
         </div>
       </div>
@@ -600,7 +636,7 @@ export default function WorkflowBuilderPage() {
             </div>
 
             <div className="flex border-b border-border px-2 pt-2 gap-1 bg-muted/10 shrink-0">
-              {(['config', 'prompt', 'advanced'] as const).map((tab) => (
+              {(['config', 'prompt', 'result', 'advanced'] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -611,7 +647,7 @@ export default function WorkflowBuilderPage() {
                       : 'border-transparent text-muted-foreground hover:text-foreground'
                   )}
                 >
-                  {tab === 'config' ? 'General' : tab === 'prompt' ? 'Prompt' : 'Advanced'}
+                  {tab === 'config' ? 'General' : tab === 'prompt' ? 'Prompt' : tab === 'result' ? 'Result' : 'Advanced'}
                 </button>
               ))}
             </div>
@@ -684,6 +720,23 @@ export default function WorkflowBuilderPage() {
                       className="w-full bg-secondary/30 font-mono text-xs border border-border rounded-md px-2.5 py-2 focus:outline-none focus:ring-1 focus:ring-primary h-48 resize-y"
                       placeholder="You are an expert orchestration agent tasked with..."
                     />
+                  </div>
+                </div>
+              )}
+
+              {activeTab === 'result' && (
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-foreground">Task Output</label>
+                    {selectedTaskResult ? (
+                      <div className="bg-secondary/30 rounded-md p-3 font-mono text-xs border border-border overflow-auto max-h-[400px]">
+                        <pre>{JSON.stringify(selectedTaskResult, null, 2)}</pre>
+                      </div>
+                    ) : (
+                      <div className="text-xs text-muted-foreground italic p-4 text-center border border-dashed border-border rounded-md">
+                        No result available yet. Execute the workflow to see output.
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

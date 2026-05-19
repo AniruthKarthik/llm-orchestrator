@@ -175,6 +175,17 @@ func (e *AgentExecutor) Execute(ctx context.Context, agentID string, task *core.
 
 		messages = append(messages, providers.Message{Role: "user", Content: userPrompt})
 
+		// 4. Dry Run Check: If the task or workflow has a dry_run flag, return a mock response
+		if dr, ok := task.Input["dry_run"].(bool); ok && dr {
+			return map[string]any{
+				"status":  "simulated",
+				"agent":   agent.Name,
+				"role":    string(agent.Role),
+				"output":  fmt.Sprintf("This is a simulated response for task: %s", task.Name),
+				"content": fmt.Sprintf("SIMULATED CONTENT for objective: %s", task.Description),
+			}, nil
+		}
+
 		req := providers.GenerateRequest{
 			Model:    agent.Model,
 			Messages: messages,
