@@ -94,7 +94,7 @@ export const DashboardLayout = ({ children }: { children: React.ReactNode }) => 
             <div className="w-6 h-6 bg-primary rounded flex items-center justify-center text-primary-foreground">
               <Terminal size={14} />
             </div>
-            <span>Orchestrator Plane</span>
+            <span>LLM Orchestrator</span>
           </div>
         </div>
 
