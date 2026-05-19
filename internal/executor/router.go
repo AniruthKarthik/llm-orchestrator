@@ -102,22 +102,3 @@ func (r *CostAwareRouter) Route(ctx context.Context, task *core.Task, availableA
 	return ids, nil
 }
 
-// AIDrivenRouter uses an LLM to select the best agent.
-type AIDrivenRouter struct {
-	agentRegistry *agents.AgentRegistry
-}
-
-func NewAIDrivenRouter(ar *agents.AgentRegistry) *AIDrivenRouter {
-	return &AIDrivenRouter{
-		agentRegistry: ar,
-	}
-}
-
-func (r *AIDrivenRouter) Route(ctx context.Context, task *core.Task, availableAgents []*agents.Agent) ([]string, error) {
-	// In a real implementation, this would call an LLM with the task description
-	// and descriptions of available agents, asking it to rank them.
-	
-	// For now, we fallback to capability-aware routing
-	cr := NewCapabilityAwareRouter()
-	return cr.Route(ctx, task, availableAgents)
-}

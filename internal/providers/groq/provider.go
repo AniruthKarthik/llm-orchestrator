@@ -33,7 +33,7 @@ func (p *GroqProvider) Name() string {
 func (p *GroqProvider) Capabilities() providers.Capabilities {
 	return providers.Capabilities{
 		SupportsTools:     true,
-		SupportsStreaming: true,
+		SupportsStreaming: false,
 		SupportsVision:    false,
 	}
 }
@@ -65,20 +65,3 @@ func (p *GroqProvider) ListModels(ctx context.Context) ([]string, error) {
 	return models, nil
 }
 
-func (p *GroqProvider) Stream(
-	ctx context.Context,
-	request providers.GenerateRequest,
-) (<-chan providers.StreamChunk, <-chan error) {
-	chunkChan := make(chan providers.StreamChunk)
-	errChan := make(chan error, 1)
-
-	// Minimal implementation: just return an error or a single chunk for now
-	// Real implementation would use p.client.Post with streaming enabled
-	go func() {
-		defer close(chunkChan)
-		defer close(errChan)
-		errChan <- fmt.Errorf("streaming not implemented for groq provider")
-	}()
-
-	return chunkChan, errChan
-}

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -176,6 +175,6 @@ func registerProviders(sm secrets.SecretManager) int {
 		registered++
 	}
 
-	fmt.Sprintf("registered %d provider(s)", registered) // suppress unused warning
+	slog.Info("providers registration complete", "count", registered)
 	return registered
 }

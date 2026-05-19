@@ -1,6 +1,7 @@
 package store
 
 import (
+	"github.com/AniruthKarthik/llm-orchestrator/internal/agents"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/core"
 )
 
@@ -146,5 +147,32 @@ func RecordToWorkflow(workflow WorkflowRecord, tasks []TaskRecord) *core.Workflo
 		StartedAt:   workflow.StartedAt,
 		FinishedAt:  workflow.FinishedAt,
 		Timeout:     workflow.Timeout,
+	}
+}
+
+func AgentToRecord(agent *agents.Agent) AgentRecord {
+	return AgentRecord{
+		ID:           agent.ID,
+		Name:         agent.Name,
+		Description:  agent.Description,
+		Role:         string(agent.Role),
+		SystemPrompt: agent.SystemPrompt,
+		Model:        agent.Model,
+		Provider:     agent.Provider,
+		Tools:        core.DeepCopyStringSlice(agent.Tools),
+		Config:       core.DeepCopyMap(agent.Config),
+	}
+}
+
+func ArtifactToRecord(artifact *core.Artifact) ArtifactRecord {
+	return ArtifactRecord{
+		ID:         artifact.ID,
+		WorkflowID: artifact.WorkflowID,
+		TaskID:     artifact.TaskID,
+		Name:       artifact.Name,
+		Type:       string(artifact.Type),
+		Data:       core.DeepCopyValue(artifact.Data),
+		Metadata:   core.DeepCopyMap(artifact.Metadata),
+		CreatedAt:  artifact.CreatedAt,
 	}
 }

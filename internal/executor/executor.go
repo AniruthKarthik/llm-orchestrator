@@ -493,7 +493,7 @@ func (e *Executor) executeTask(
 
 	// Save output as an artifact automatically
 	artifactID := fmt.Sprintf("art-%s", task.ID)
-	_ = e.artifactRegistry.Register(&core.Artifact{
+	artifact := &core.Artifact{
 		ID:         artifactID,
 		WorkflowID: workflow.ID,
 		TaskID:     task.ID,
@@ -501,7 +501,9 @@ func (e *Executor) executeTask(
 		Type:       core.ArtifactTypeJSON,
 		Data:       output,
 		CreatedAt:  time.Now(),
-	})
+	}
+	_ = e.artifactRegistry.Register(artifact)
+	_ = e.store.SaveArtifact(store.ArtifactToRecord(artifact))
 
 	if err := e.store.UpdateTask(
 		store.TaskToRecord(workflow.ID, task),

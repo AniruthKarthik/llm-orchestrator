@@ -479,6 +479,7 @@ func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		if ag := s.buildAgentForTask(req.ID, tr); ag != nil {
 			task.AgentID = ag.ID
 			s.executor.GetAgentRegistry().Register(ag)
+			_ = s.store.SaveAgent(store.AgentToRecord(ag))
 		}
 
 		_ = workflow.AddTask(task)
@@ -681,6 +682,7 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 		if ag := s.buildAgentForTask(id, tr); ag != nil {
 			task.AgentID = ag.ID
 			s.executor.GetAgentRegistry().Register(ag)
+			_ = s.store.SaveAgent(store.AgentToRecord(ag))
 		}
 
 		_, lookupErr := s.store.GetTask(id, tr.ID)

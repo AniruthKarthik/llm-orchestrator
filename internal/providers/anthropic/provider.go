@@ -3,7 +3,6 @@ package anthropic
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"time"
 
 	"github.com/AniruthKarthik/llm-orchestrator/internal/httpclient"
@@ -33,7 +32,7 @@ func (p *AnthropicProvider) Name() string {
 func (p *AnthropicProvider) Capabilities() providers.Capabilities {
 	return providers.Capabilities{
 		SupportsTools:     true,
-		SupportsStreaming: true,
+		SupportsStreaming: false,
 		SupportsVision:    true,
 	}
 }
@@ -70,18 +69,3 @@ func (p *AnthropicProvider) ListModels(ctx context.Context) ([]string, error) {
 	return models, nil
 }
 
-func (p *AnthropicProvider) Stream(
-	ctx context.Context,
-	request providers.GenerateRequest,
-) (<-chan providers.StreamChunk, <-chan error) {
-	chunkChan := make(chan providers.StreamChunk)
-	errChan := make(chan error, 1)
-
-	go func() {
-		defer close(chunkChan)
-		defer close(errChan)
-		errChan <- fmt.Errorf("streaming not implemented for anthropic provider")
-	}()
-
-	return chunkChan, errChan
-}

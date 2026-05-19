@@ -33,7 +33,7 @@ func (p *GeminiProvider) Name() string {
 func (p *GeminiProvider) Capabilities() providers.Capabilities {
 	return providers.Capabilities{
 		SupportsTools:     true,
-		SupportsStreaming: true,
+		SupportsStreaming: false,
 		SupportsVision:    true,
 	}
 }
@@ -73,18 +73,3 @@ func (p *GeminiProvider) ListModels(ctx context.Context) ([]string, error) {
 	return models, nil
 }
 
-func (p *GeminiProvider) Stream(
-	ctx context.Context,
-	request providers.GenerateRequest,
-) (<-chan providers.StreamChunk, <-chan error) {
-	chunkChan := make(chan providers.StreamChunk)
-	errChan := make(chan error, 1)
-
-	go func() {
-		defer close(chunkChan)
-		defer close(errChan)
-		errChan <- fmt.Errorf("streaming not implemented for gemini provider")
-	}()
-
-	return chunkChan, errChan
-}
