@@ -491,6 +491,18 @@ func (e *Executor) executeTask(
 		return err
 	}
 
+	// Save output as an artifact automatically
+	artifactID := fmt.Sprintf("art-%s", task.ID)
+	_ = e.artifactRegistry.Register(&core.Artifact{
+		ID:         artifactID,
+		WorkflowID: workflow.ID,
+		TaskID:     task.ID,
+		Name:       fmt.Sprintf("%s Output", task.Name),
+		Type:       core.ArtifactTypeJSON,
+		Data:       output,
+		CreatedAt:  time.Now(),
+	})
+
 	if err := e.store.UpdateTask(
 		store.TaskToRecord(workflow.ID, task),
 	); err != nil {
