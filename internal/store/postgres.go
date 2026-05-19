@@ -144,17 +144,20 @@ func (s *PostgresStore) SaveTask(task TaskRecord) error {
 	inputJSON, _ := json.Marshal(task.Input)
 	outputJSON, _ := json.Marshal(task.Output)
 	schemaJSON, _ := json.Marshal(task.OutputSchema)
+	retryPolicyJSON, _ := json.Marshal(task.RetryPolicy)
 
 	query := `
-		INSERT INTO tasks (id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema, agent_id, provider, model)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		INSERT INTO tasks (id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema, agent_id, provider, model, retry_policy, attempt, requires_approval)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 		ON CONFLICT (id, workflow_id) DO UPDATE
 		SET name = EXCLUDED.name, description = EXCLUDED.description, status = EXCLUDED.status,
 		    error = EXCLUDED.error, input = EXCLUDED.input, output = EXCLUDED.output,
 		    dependencies = EXCLUDED.dependencies, started_at = EXCLUDED.started_at,
 		    finished_at = EXCLUDED.finished_at, timeout = EXCLUDED.timeout,
 		    output_schema = EXCLUDED.output_schema, agent_id = EXCLUDED.agent_id,
-		    provider = EXCLUDED.provider, model = EXCLUDED.model
+		    provider = EXCLUDED.provider, model = EXCLUDED.model,
+		    retry_policy = EXCLUDED.retry_policy, attempt = EXCLUDED.attempt,
+		    requires_approval = EXCLUDED.requires_approval
 	`
 	_, err := s.pool.Exec(ctx, query,
 		task.ID,
@@ -174,6 +177,9 @@ func (s *PostgresStore) SaveTask(task TaskRecord) error {
 		task.AgentID,
 		task.Provider,
 		task.Model,
+		retryPolicyJSON,
+		task.Attempt,
+		task.RequiresApproval,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to save task: %w", err)
@@ -186,10 +192,11 @@ func (s *PostgresStore) UpdateTask(task TaskRecord) error {
 	inputJSON, _ := json.Marshal(task.Input)
 	outputJSON, _ := json.Marshal(task.Output)
 	schemaJSON, _ := json.Marshal(task.OutputSchema)
+	retryPolicyJSON, _ := json.Marshal(task.RetryPolicy)
 
 	query := `
 		UPDATE tasks
-		SET name = $3, description = $4, status = $5, error = $6, input = $7, output = $8, dependencies = $9, started_at = $10, finished_at = $11, timeout = $12, output_schema = $13, agent_id = $14, provider = $15, model = $16
+		SET name = $3, description = $4, status = $5, error = $6, input = $7, output = $8, dependencies = $9, started_at = $10, finished_at = $11, timeout = $12, output_schema = $13, agent_id = $14, provider = $15, model = $16, retry_policy = $17, attempt = $18, requires_approval = $19
 		WHERE id = $1 AND workflow_id = $2
 	`
 	tag, err := s.pool.Exec(ctx, query,
@@ -209,6 +216,9 @@ func (s *PostgresStore) UpdateTask(task TaskRecord) error {
 		task.AgentID,
 		task.Provider,
 		task.Model,
+		retryPolicyJSON,
+		task.Attempt,
+		task.RequiresApproval,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update task: %w", err)
@@ -222,12 +232,12 @@ func (s *PostgresStore) UpdateTask(task TaskRecord) error {
 func (s *PostgresStore) GetTask(workflowID string, taskID string) (TaskRecord, error) {
 	ctx := context.Background()
 	query := `
-		SELECT id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema, agent_id, provider, model
+		SELECT id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema, agent_id, provider, model, retry_policy, attempt, requires_approval
 		FROM tasks
 		WHERE id = $1 AND workflow_id = $2
 	`
 	var t TaskRecord
-	var inputJSON, outputJSON, schemaJSON []byte
+	var inputJSON, outputJSON, schemaJSON, retryPolicyJSON []byte
 	var timeout int64
 	err := s.pool.QueryRow(ctx, query, taskID, workflowID).Scan(
 		&t.ID,
@@ -247,6 +257,9 @@ func (s *PostgresStore) GetTask(workflowID string, taskID string) (TaskRecord, e
 		&t.AgentID,
 		&t.Provider,
 		&t.Model,
+		&retryPolicyJSON,
+		&t.Attempt,
+		&t.RequiresApproval,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -257,6 +270,7 @@ func (s *PostgresStore) GetTask(workflowID string, taskID string) (TaskRecord, e
 	json.Unmarshal(inputJSON, &t.Input)
 	json.Unmarshal(outputJSON, &t.Output)
 	json.Unmarshal(schemaJSON, &t.OutputSchema)
+	json.Unmarshal(retryPolicyJSON, &t.RetryPolicy)
 	t.Timeout = time.Duration(timeout)
 	return t, nil
 }
@@ -264,7 +278,7 @@ func (s *PostgresStore) GetTask(workflowID string, taskID string) (TaskRecord, e
 func (s *PostgresStore) GetWorkflowTasks(workflowID string) ([]TaskRecord, error) {
 	ctx := context.Background()
 	query := `
-		SELECT id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema, agent_id, provider, model
+		SELECT id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema, agent_id, provider, model, retry_policy, attempt, requires_approval
 		FROM tasks
 		WHERE workflow_id = $1
 	`
@@ -277,7 +291,7 @@ func (s *PostgresStore) GetWorkflowTasks(workflowID string) ([]TaskRecord, error
 	var tasks []TaskRecord
 	for rows.Next() {
 		var t TaskRecord
-		var inputJSON, outputJSON, schemaJSON []byte
+		var inputJSON, outputJSON, schemaJSON, retryPolicyJSON []byte
 		var timeout int64
 		err := rows.Scan(
 			&t.ID,
@@ -297,6 +311,9 @@ func (s *PostgresStore) GetWorkflowTasks(workflowID string) ([]TaskRecord, error
 			&t.AgentID,
 			&t.Provider,
 			&t.Model,
+			&retryPolicyJSON,
+			&t.Attempt,
+			&t.RequiresApproval,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan task: %w", err)
@@ -304,6 +321,7 @@ func (s *PostgresStore) GetWorkflowTasks(workflowID string) ([]TaskRecord, error
 		json.Unmarshal(inputJSON, &t.Input)
 		json.Unmarshal(outputJSON, &t.Output)
 		json.Unmarshal(schemaJSON, &t.OutputSchema)
+		json.Unmarshal(retryPolicyJSON, &t.RetryPolicy)
 		t.Timeout = time.Duration(timeout)
 		tasks = append(tasks, t)
 	}
@@ -313,7 +331,7 @@ func (s *PostgresStore) GetWorkflowTasks(workflowID string) ([]TaskRecord, error
 func (s *PostgresStore) ListTasksByStatus(status string) ([]TaskRecord, error) {
 	ctx := context.Background()
 	query := `
-		SELECT id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema, agent_id, provider, model
+		SELECT id, workflow_id, name, description, status, error, input, output, dependencies, created_at, started_at, finished_at, timeout, output_schema, agent_id, provider, model, retry_policy, attempt, requires_approval
 		FROM tasks
 		WHERE status = $1
 	`
@@ -326,7 +344,7 @@ func (s *PostgresStore) ListTasksByStatus(status string) ([]TaskRecord, error) {
 	var tasks []TaskRecord
 	for rows.Next() {
 		var t TaskRecord
-		var inputJSON, outputJSON, schemaJSON []byte
+		var inputJSON, outputJSON, schemaJSON, retryPolicyJSON []byte
 		var timeout int64
 		err := rows.Scan(
 			&t.ID,
@@ -346,6 +364,9 @@ func (s *PostgresStore) ListTasksByStatus(status string) ([]TaskRecord, error) {
 			&t.AgentID,
 			&t.Provider,
 			&t.Model,
+			&retryPolicyJSON,
+			&t.Attempt,
+			&t.RequiresApproval,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan task: %w", err)
@@ -353,10 +374,24 @@ func (s *PostgresStore) ListTasksByStatus(status string) ([]TaskRecord, error) {
 		json.Unmarshal(inputJSON, &t.Input)
 		json.Unmarshal(outputJSON, &t.Output)
 		json.Unmarshal(schemaJSON, &t.OutputSchema)
+		json.Unmarshal(retryPolicyJSON, &t.RetryPolicy)
 		t.Timeout = time.Duration(timeout)
 		tasks = append(tasks, t)
 	}
 	return tasks, nil
+}
+
+func (s *PostgresStore) DeleteTask(workflowID string, taskID string) error {
+	ctx := context.Background()
+	query := `DELETE FROM tasks WHERE workflow_id = $1 AND id = $2`
+	tag, err := s.pool.Exec(ctx, query, workflowID, taskID)
+	if err != nil {
+		return fmt.Errorf("failed to delete task: %w", err)
+	}
+	if tag.RowsAffected() == 0 {
+		return fmt.Errorf("task not found: %s in workflow %s", taskID, workflowID)
+	}
+	return nil
 }
 
 func (s *PostgresStore) SaveAgent(agent AgentRecord) error {

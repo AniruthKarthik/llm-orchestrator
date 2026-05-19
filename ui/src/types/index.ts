@@ -20,9 +20,16 @@ export interface Task {
   input: Record<string, unknown>;
   output?: Record<string, unknown>;
   dependencies: string[];
+  timeout?: number;
+  retryPolicy?: {
+    MaxRetries?: number;
+    maxRetries?: number;
+  };
+  attempt?: number;
   agentId?: string;
   provider?: string;
   model?: string;
+  requiresApproval?: boolean;
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;

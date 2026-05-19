@@ -1,0 +1,3 @@
+ALTER TABLE tasks DROP COLUMN IF EXISTS requires_approval;
+ALTER TABLE tasks DROP COLUMN IF EXISTS attempt;
+ALTER TABLE tasks DROP COLUMN IF EXISTS retry_policy;

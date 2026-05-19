@@ -38,6 +38,8 @@ type Store interface {
 		status string,
 	) ([]TaskRecord, error)
 
+	DeleteTask(workflowID string, taskID string) error
+
 	SaveCheckpoint(
 		checkpoint CheckpointRecord,
 	) error
@@ -81,23 +83,26 @@ func WorkflowToRecord(
 
 func TaskToRecord(workflowID string, task *core.Task) TaskRecord {
 	return TaskRecord{
-		ID:           task.ID,
-		WorkflowID:   workflowID,
-		Name:         task.Name,
-		Description:  task.Description,
-		Status:       string(task.Status),
-		Error:        task.Error,
-		Input:        core.DeepCopyMap(task.Input),
-		Output:       core.DeepCopyMap(task.Output),
-		Dependencies: core.DeepCopyStringSlice(task.Dependencies),
-		CreatedAt:    task.CreatedAt,
-		StartedAt:    task.StartedAt,
-		FinishedAt:   task.FinishedAt,
-		Timeout:      task.Timeout,
-		OutputSchema: core.DeepCopyStringMap(task.OutputSchema),
-		AgentID:      task.AgentID,
-		Provider:     task.Provider,
-		Model:        task.Model,
+		ID:               task.ID,
+		WorkflowID:       workflowID,
+		Name:             task.Name,
+		Description:      task.Description,
+		Status:           string(task.Status),
+		Error:            task.Error,
+		Input:            core.DeepCopyMap(task.Input),
+		Output:           core.DeepCopyMap(task.Output),
+		Dependencies:     core.DeepCopyStringSlice(task.Dependencies),
+		CreatedAt:        task.CreatedAt,
+		StartedAt:        task.StartedAt,
+		FinishedAt:       task.FinishedAt,
+		Timeout:          task.Timeout,
+		OutputSchema:     core.DeepCopyStringMap(task.OutputSchema),
+		RetryPolicy:      task.RetryPolicy,
+		Attempt:          task.Attempt,
+		AgentID:          task.AgentID,
+		Provider:         task.Provider,
+		Model:            task.Model,
+		RequiresApproval: task.RequiresApproval,
 	}
 }
 
@@ -106,22 +111,25 @@ func RecordToWorkflow(workflow WorkflowRecord, tasks []TaskRecord) *core.Workflo
 
 	for _, task := range tasks {
 		runtimeTasks[task.ID] = &core.Task{
-			ID:           task.ID,
-			Name:         task.Name,
-			Description:  task.Description,
-			Status:       core.TaskStatus(task.Status),
-			Error:        task.Error,
-			Input:        core.DeepCopyMap(task.Input),
-			Output:       core.DeepCopyMap(task.Output),
-			Dependencies: core.DeepCopyStringSlice(task.Dependencies),
-			CreatedAt:    task.CreatedAt,
-			StartedAt:    task.StartedAt,
-			FinishedAt:   task.FinishedAt,
-			Timeout:      task.Timeout,
-			OutputSchema: core.DeepCopyStringMap(task.OutputSchema),
-			AgentID:      task.AgentID,
-			Provider:     task.Provider,
-			Model:        task.Model,
+			ID:               task.ID,
+			Name:             task.Name,
+			Description:      task.Description,
+			Status:           core.TaskStatus(task.Status),
+			Error:            task.Error,
+			Input:            core.DeepCopyMap(task.Input),
+			Output:           core.DeepCopyMap(task.Output),
+			Dependencies:     core.DeepCopyStringSlice(task.Dependencies),
+			CreatedAt:        task.CreatedAt,
+			StartedAt:        task.StartedAt,
+			FinishedAt:       task.FinishedAt,
+			Timeout:          task.Timeout,
+			OutputSchema:     core.DeepCopyStringMap(task.OutputSchema),
+			RetryPolicy:      task.RetryPolicy,
+			Attempt:          task.Attempt,
+			AgentID:          task.AgentID,
+			Provider:         task.Provider,
+			Model:            task.Model,
+			RequiresApproval: task.RequiresApproval,
 		}
 	}
 

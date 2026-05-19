@@ -26,11 +26,11 @@ const (
 
 // RetryPolicy defines the rules for retrying a failed task or workflow.
 type RetryPolicy struct {
-	MaxRetries    int
-	Strategy      RetryStrategy
-	InitialDelay  time.Duration
-	MaxDelay      time.Duration
-	BackoffFactor float64
+	MaxRetries    int           `json:"maxRetries"`
+	Strategy      RetryStrategy `json:"strategy"`
+	InitialDelay  time.Duration `json:"initialDelay"`
+	MaxDelay      time.Duration `json:"maxDelay"`
+	BackoffFactor float64       `json:"backoffFactor"`
 }
 
 // CalculateDelay computes the delay before the next retry based on the attempt number.

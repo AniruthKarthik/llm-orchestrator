@@ -190,6 +190,23 @@ func (m *MemoryStore) ListTasksByStatus(
 	return list, nil
 }
 
+func (m *MemoryStore) DeleteTask(workflowID string, taskID string) error {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	workflowTasks, exists := m.tasks[workflowID]
+	if !exists {
+		return fmt.Errorf("workflow tasks not found: %s", workflowID)
+	}
+
+	if _, exists := workflowTasks[taskID]; !exists {
+		return fmt.Errorf("task not found: %s", taskID)
+	}
+
+	delete(workflowTasks, taskID)
+	return nil
+}
+
 func deepCopyTask(t TaskRecord) TaskRecord {
 	cp := t
 	cp.Input = core.DeepCopyMap(t.Input)
@@ -359,4 +376,3 @@ func (m *MemoryStore) DeleteWorkflow(workflowID string) error {
 	delete(m.checkpoints, workflowID)
 	return nil
 }
-

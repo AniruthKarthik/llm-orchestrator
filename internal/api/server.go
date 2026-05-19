@@ -11,13 +11,13 @@ import (
 	"os"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/agents"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/core"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/events"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/executor"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/providers"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/store"
+	"github.com/gorilla/websocket"
 )
 
 var upgrader = websocket.Upgrader{
@@ -27,9 +27,9 @@ var upgrader = websocket.Upgrader{
 const maxBodyBytes = 1 << 20 // 1 MiB — reject larger request bodies
 
 type Server struct {
-	executor     *executor.Executor
-	store        store.Store
-	eb           *events.EventBus
+	executor      *executor.Executor
+	store         store.Store
+	eb            *events.EventBus
 	allowedOrigin string // CORS origin, "*" by default
 	apiKey        string // optional — empty means no auth
 }
@@ -261,11 +261,17 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	eventTypes := []events.EventType{
 		events.TaskStarted,
+		events.TaskWaitingForApproval,
+		events.TaskRetried,
 		events.TaskCompleted,
 		events.TaskFailed,
+		events.TaskTokenUsage,
 		events.WorkflowStarted,
 		events.WorkflowCompleted,
 		events.WorkflowFailed,
+		events.StageStarted,
+		events.StageCompleted,
+		events.StageFailed,
 	}
 
 	// Register subscriptions and track IDs for clean removal
@@ -344,17 +350,17 @@ func (s *Server) handleListWorkflows(w http.ResponseWriter, r *http.Request) {
 }
 
 type TaskRequest struct {
-	ID           string         `json:"id"`
-	Name         string         `json:"name"`
-	Description  string         `json:"description"`
-	Input        map[string]any `json:"input"`
-	Dependencies []string       `json:"dependencies"`
-	Provider     string         `json:"provider"`
-	Model        string         `json:"model"`
-	SystemPrompt string         `json:"systemPrompt"`
-	RequiresApproval bool       `json:"requiresApproval"`
-	MaxRetries   int            `json:"maxRetries"`
-	TimeoutMs    int            `json:"timeoutMs"`
+	ID               string         `json:"id"`
+	Name             string         `json:"name"`
+	Description      string         `json:"description"`
+	Input            map[string]any `json:"input"`
+	Dependencies     []string       `json:"dependencies"`
+	Provider         string         `json:"provider"`
+	Model            string         `json:"model"`
+	SystemPrompt     string         `json:"systemPrompt"`
+	RequiresApproval bool           `json:"requiresApproval"`
+	MaxRetries       int            `json:"maxRetries"`
+	TimeoutMs        int            `json:"timeoutMs"`
 }
 
 type CreateWorkflowRequest struct {
@@ -386,6 +392,31 @@ func (s *Server) buildAgentForTask(wfID string, tr TaskRequest) *agents.Agent {
 	}
 }
 
+func taskFromRequest(workflowID string, tr TaskRequest) *core.Task {
+	input := tr.Input
+	if input == nil {
+		input = map[string]any{}
+	}
+	if tr.SystemPrompt != "" {
+		input["system_prompt"] = tr.SystemPrompt
+	}
+
+	task := core.NewTask(tr.ID, workflowID, tr.Name, tr.Description, input, tr.Dependencies)
+	task.Provider = tr.Provider
+	task.Model = tr.Model
+	task.RequiresApproval = tr.RequiresApproval
+	if tr.MaxRetries > 0 {
+		task.RetryPolicy = &core.RetryPolicy{
+			MaxRetries: tr.MaxRetries,
+			Strategy:   core.RetryStrategyImmediate,
+		}
+	}
+	if tr.TimeoutMs > 0 {
+		task.Timeout = time.Duration(tr.TimeoutMs) * time.Millisecond
+	}
+	return task
+}
+
 func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	var req CreateWorkflowRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -412,19 +443,7 @@ func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 		if tr.ID == "" {
 			tr.ID = fmt.Sprintf("task-%d", time.Now().UnixNano())
 		}
-		input := tr.Input
-		if input == nil {
-			input = map[string]any{}
-		}
-		if tr.SystemPrompt != "" {
-			input["system_prompt"] = tr.SystemPrompt
-		}
-		task := core.NewTask(tr.ID, workflow.ID, tr.Name, tr.Description, input, tr.Dependencies)
-		task.Provider = tr.Provider
-		task.Model = tr.Model
-		if tr.TimeoutMs > 0 {
-			task.Timeout = time.Duration(tr.TimeoutMs) * time.Millisecond
-		}
+		task := taskFromRequest(workflow.ID, tr)
 
 		if ag := s.buildAgentForTask(req.ID, tr); ag != nil {
 			task.AgentID = ag.ID
@@ -503,23 +522,13 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	seen := make(map[string]bool, len(req.Tasks))
 	for _, tr := range req.Tasks {
 		if tr.ID == "" {
 			tr.ID = fmt.Sprintf("task-%d", time.Now().UnixNano())
 		}
-		input := tr.Input
-		if input == nil {
-			input = map[string]any{}
-		}
-		if tr.SystemPrompt != "" {
-			input["system_prompt"] = tr.SystemPrompt
-		}
-		task := core.NewTask(tr.ID, id, tr.Name, tr.Description, input, tr.Dependencies)
-		task.Provider = tr.Provider
-		task.Model = tr.Model
-		if tr.TimeoutMs > 0 {
-			task.Timeout = time.Duration(tr.TimeoutMs) * time.Millisecond
-		}
+		seen[tr.ID] = true
+		task := taskFromRequest(id, tr)
 
 		if ag := s.buildAgentForTask(id, tr); ag != nil {
 			task.AgentID = ag.ID
@@ -536,6 +545,22 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 		} else {
 			if err := s.store.UpdateTask(store.TaskToRecord(id, task)); err != nil {
 				slog.Error("updateWorkflow updateTask", "error", err)
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+		}
+	}
+
+	existingTasks, err := s.store.GetWorkflowTasks(id)
+	if err != nil {
+		slog.Error("updateWorkflow existing tasks", "error", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	for _, existing := range existingTasks {
+		if !seen[existing.ID] {
+			if err := s.store.DeleteTask(id, existing.ID); err != nil {
+				slog.Error("updateWorkflow deleteTask", "task_id", existing.ID, "error", err)
 				writeError(w, http.StatusInternalServerError, err.Error())
 				return
 			}

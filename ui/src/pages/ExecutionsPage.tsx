@@ -49,18 +49,18 @@ export default function ExecutionsPage() {
   };
 
   const getEventIcon = (type: string) => {
-    if (type.includes('Started')) return <PlayCircle size={14} className="text-blue-500" />;
-    if (type.includes('Completed')) return <CheckCircle2 size={14} className="text-green-500" />;
-    if (type.includes('Failed')) return <XCircle size={14} className="text-red-500" />;
-    if (type.includes('Approval') || type.includes('Waiting')) return <AlertTriangle size={14} className="text-amber-500" />;
+    if (type.includes('STARTED')) return <PlayCircle size={14} className="text-blue-500" />;
+    if (type.includes('COMPLETED')) return <CheckCircle2 size={14} className="text-green-500" />;
+    if (type.includes('FAILED')) return <XCircle size={14} className="text-red-500" />;
+    if (type.includes('APPROVAL') || type.includes('WAITING')) return <AlertTriangle size={14} className="text-amber-500" />;
     return <Activity size={14} className="text-muted-foreground" />;
   };
 
   const getEventColor = (type: string) => {
-    if (type.includes('Started')) return 'border-blue-500/20 bg-blue-500/5';
-    if (type.includes('Completed')) return 'border-green-500/20 bg-green-500/5';
-    if (type.includes('Failed')) return 'border-red-500/20 bg-red-500/5';
-    if (type.includes('Approval') || type.includes('Waiting')) return 'border-amber-500/20 bg-amber-500/5';
+    if (type.includes('STARTED')) return 'border-blue-500/20 bg-blue-500/5';
+    if (type.includes('COMPLETED')) return 'border-green-500/20 bg-green-500/5';
+    if (type.includes('FAILED')) return 'border-red-500/20 bg-red-500/5';
+    if (type.includes('APPROVAL') || type.includes('WAITING')) return 'border-amber-500/20 bg-amber-500/5';
     return 'border-border bg-transparent';
   };
 
@@ -159,7 +159,7 @@ export default function ExecutionsPage() {
                             <span
                               className={cn(
                                 'font-bold uppercase tracking-tight',
-                                event.type.includes('Failed') ? 'text-red-400' : 'text-blue-400'
+                                event.type.includes('FAILED') ? 'text-red-400' : 'text-blue-400'
                               )}
                             >
                               {event.type}
@@ -170,7 +170,7 @@ export default function ExecutionsPage() {
                           </div>
 
                           {/* Approval Action */}
-                          {(event.type === 'TaskWaitingForApproval') && Boolean(payload['WorkflowID']) && Boolean(payload['TaskID']) && (
+                          {event.type === 'TASK_WAITING_FOR_APPROVAL' && (
                             <div className="mt-2 p-2 bg-amber-500/10 border border-amber-500/20 rounded flex items-center justify-between text-amber-200">
                               <div className="flex items-center gap-2 font-medium">
                                 <ShieldCheck size={14} />
@@ -179,14 +179,14 @@ export default function ExecutionsPage() {
                               <button
                                 onClick={() =>
                                   handleApprove(
-                                    String(payload['WorkflowID']),
-                                    String(payload['TaskID'])
+                                    event.workflowId,
+                                    event.taskId ?? ''
                                   )
                                 }
-                                disabled={approving === String(payload['TaskID'])}
+                                disabled={!event.taskId || approving === event.taskId}
                                 className="bg-amber-500 text-amber-950 px-2 py-1 rounded font-bold hover:bg-amber-400 transition-colors disabled:opacity-50 flex items-center gap-1.5"
                               >
-                                {approving === String(payload['TaskID']) ? (
+                                {approving === event.taskId ? (
                                   <><Loader2 size={12} className="animate-spin" /> Approving...</>
                                 ) : (
                                   'Approve'

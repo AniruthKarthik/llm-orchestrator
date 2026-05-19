@@ -136,8 +136,13 @@ export default function WorkflowBuilderPage() {
           provider: task.provider || '',
           model: task.model || '',
           systemPrompt: ((task.input as Record<string, unknown>)?.system_prompt as string) || '',
-          maxRetries: 3,
-          timeoutMs: 30000,
+          maxRetries: Number(
+            (task.retryPolicy as Record<string, unknown> | undefined)?.maxRetries ??
+            (task.retryPolicy as Record<string, unknown> | undefined)?.MaxRetries ??
+            0
+          ),
+          timeoutMs: task.timeout ? Math.max(1000, Math.round(Number(task.timeout) / 1_000_000)) : 30000,
+          requiresApproval: Boolean(task.requiresApproval),
         },
       }));
 
@@ -194,6 +199,7 @@ export default function WorkflowBuilderPage() {
         systemPrompt: '',
         maxRetries: 3,
         timeoutMs: 30000,
+        requiresApproval: false,
       },
     };
     setNodes((nds) => nds.concat(newNode));
@@ -236,6 +242,7 @@ export default function WorkflowBuilderPage() {
           provider: (node.data.provider as string) || '',
           model: (node.data.model as string) || '',
           systemPrompt: (node.data.systemPrompt as string) || '',
+          requiresApproval: Boolean(node.data.requiresApproval),
           maxRetries: (node.data.maxRetries as number) ?? 3,
           timeoutMs: (node.data.timeoutMs as number) ?? 30000,
         };
@@ -573,6 +580,19 @@ export default function WorkflowBuilderPage() {
                       </div>
                     </div>
                   </div>
+
+                  <label className="flex items-center justify-between gap-3 rounded-md border border-border bg-background px-3 py-2">
+                    <span>
+                      <span className="block text-xs font-semibold text-foreground">Require Approval</span>
+                      <span className="block text-[10px] text-muted-foreground">Pause before executing this task.</span>
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(selectedNode.data.requiresApproval)}
+                      onChange={(e) => updateNodeData(selectedNode.id, { requiresApproval: e.target.checked })}
+                      className="h-4 w-4 accent-primary"
+                    />
+                  </label>
 
                   <div className="pt-8">
                     <button
