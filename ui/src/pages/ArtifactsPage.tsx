@@ -4,18 +4,31 @@ import { useWorkflowStore } from '@/store/useWorkflowStore';
 import type { Artifact } from '@/types';
 
 function ArtifactPreviewModal({ artifact, onClose }: { artifact: Artifact; onClose: () => void }) {
-  // Intelligently extract actual text response if data is an object
+  // Intelligently extract actual text response if data is an object or stringified JSON
   let displayContent = artifact.data;
   let isExtracted = false;
 
-  if (typeof artifact.data === 'object' && artifact.data !== null) {
-    const d = artifact.data as any;
+  let parsedData = artifact.data;
+  
+  // If data is a string, it might be stringified JSON from the backend
+  if (typeof artifact.data === 'string') {
+    try {
+      parsedData = JSON.parse(artifact.data);
+    } catch (e) {
+      // not JSON, keep as string
+    }
+  }
+
+  if (typeof parsedData === 'object' && parsedData !== null) {
+    const d = parsedData as any;
     if (d.response && typeof d.response === 'string') {
       displayContent = d.response;
       isExtracted = true;
     } else if (d.output && typeof d.output === 'string') {
       displayContent = d.output;
       isExtracted = true;
+    } else {
+      displayContent = parsedData;
     }
   }
 
