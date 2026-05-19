@@ -67,7 +67,7 @@ func main() {
 	}
 
 	// 4. Initialize Core Components
-	eb := events.NewEventBus(10)
+	eb := events.NewEventBus(1)
 	wr := executor.NewWorkerRegistry()
 	ar := agents.NewAgentRegistry()
 	art := core.NewArtifactRegistry()
@@ -86,9 +86,22 @@ func main() {
 
 	// 6. Wire Audit Logger to EventBus
 	al := observer.NewAuditLogger(s)
-	eb.Subscribe(events.TaskStarted, al.Handle)
-	eb.Subscribe(events.TaskCompleted, al.Handle)
-	eb.Subscribe(events.TaskFailed, al.Handle)
+	for _, eventType := range []events.EventType{
+		events.WorkflowStarted,
+		events.WorkflowCompleted,
+		events.WorkflowFailed,
+		events.TaskStarted,
+		events.TaskWaitingForApproval,
+		events.TaskRetried,
+		events.TaskCompleted,
+		events.TaskFailed,
+		events.TaskTokenUsage,
+		events.StageStarted,
+		events.StageCompleted,
+		events.StageFailed,
+	} {
+		eb.Subscribe(eventType, al.Handle)
+	}
 
 	// 7. Build HTTP Server
 	srv := api.NewServer(exec, s, eb)

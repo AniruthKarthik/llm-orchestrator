@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
 export interface WsEvent {
+  id?: string;
   type: string;
   workflowId: string;
   taskId?: string;

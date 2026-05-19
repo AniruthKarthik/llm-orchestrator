@@ -250,15 +250,6 @@ func (e *Executor) execute(
 			)
 
 			e.eventBus.Publish(events.Event{
-				Type:       events.WorkflowFailed,
-				WorkflowID: workflow.ID,
-				Timestamp:  time.Now(),
-				Payload: map[string]any{
-					"error": stageErr.Error(),
-				},
-			})
-
-			e.eventBus.Publish(events.Event{
 				Type:       events.StageFailed,
 				WorkflowID: workflow.ID,
 				Timestamp:  time.Now(),
@@ -266,6 +257,15 @@ func (e *Executor) execute(
 					"level":   stage.Level,
 					"taskIds": stage.TaskIDs,
 					"error":   stageErr.Error(),
+				},
+			})
+
+			e.eventBus.Publish(events.Event{
+				Type:       events.WorkflowFailed,
+				WorkflowID: workflow.ID,
+				Timestamp:  time.Now(),
+				Payload: map[string]any{
+					"error": stageErr.Error(),
 				},
 			})
 

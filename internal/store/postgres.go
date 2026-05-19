@@ -638,6 +638,74 @@ func (s *PostgresStore) DeleteWorkflow(workflowID string) error {
 	return nil
 }
 
+func (s *PostgresStore) SaveEvent(event EventRecord) error {
+	ctx := context.Background()
+	payloadJSON, _ := json.Marshal(event.Payload)
+	query := `
+		INSERT INTO event_logs (id, type, workflow_id, task_id, severity, message, payload, timestamp)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+	`
+	_, err := s.pool.Exec(ctx, query,
+		event.ID,
+		event.Type,
+		event.WorkflowID,
+		event.TaskID,
+		event.Severity,
+		event.Message,
+		payloadJSON,
+		event.Timestamp,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save event: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) ListEvents(workflowID string, limit int) ([]EventRecord, error) {
+	ctx := context.Background()
+	if limit <= 0 {
+		limit = 200
+	}
+
+	query := `
+		SELECT id, type, workflow_id, task_id, severity, message, payload, timestamp
+		FROM event_logs
+		WHERE ($1 = '' OR workflow_id = $1)
+		ORDER BY timestamp DESC
+		LIMIT $2
+	`
+	rows, err := s.pool.Query(ctx, query, workflowID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list events: %w", err)
+	}
+	defer rows.Close()
+
+	records := make([]EventRecord, 0)
+	for rows.Next() {
+		var event EventRecord
+		var payloadJSON []byte
+		if err := rows.Scan(
+			&event.ID,
+			&event.Type,
+			&event.WorkflowID,
+			&event.TaskID,
+			&event.Severity,
+			&event.Message,
+			&payloadJSON,
+			&event.Timestamp,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan event: %w", err)
+		}
+		json.Unmarshal(payloadJSON, &event.Payload)
+		records = append(records, event)
+	}
+
+	for i, j := 0, len(records)-1; i < j; i, j = i+1, j-1 {
+		records[i], records[j] = records[j], records[i]
+	}
+	return records, nil
+}
+
 func (s *PostgresStore) ListAllArtifacts() ([]ArtifactRecord, error) {
 	ctx := context.Background()
 	query := `

@@ -59,6 +59,9 @@ type Store interface {
 	ListArtifactsByWorkflow(workflowID string) ([]ArtifactRecord, error)
 	ListAllArtifacts() ([]ArtifactRecord, error)
 
+	SaveEvent(event EventRecord) error
+	ListEvents(workflowID string, limit int) ([]EventRecord, error)
+
 	DeleteWorkflow(workflowID string) error
 }
 

@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/AniruthKarthik/llm-orchestrator/internal/core"
@@ -13,6 +14,7 @@ type MemoryStore struct {
 	checkpoints map[string][]CheckpointRecord
 	agents      map[string]AgentRecord
 	artifacts   map[string]ArtifactRecord
+	events      []EventRecord
 
 	mutex sync.RWMutex
 }
@@ -24,6 +26,7 @@ func NewMemoryStore() *MemoryStore {
 		checkpoints: make(map[string][]CheckpointRecord),
 		agents:      make(map[string]AgentRecord),
 		artifacts:   make(map[string]ArtifactRecord),
+		events:      make([]EventRecord, 0),
 	}
 }
 
@@ -374,5 +377,46 @@ func (m *MemoryStore) DeleteWorkflow(workflowID string) error {
 	delete(m.workflows, workflowID)
 	delete(m.tasks, workflowID)
 	delete(m.checkpoints, workflowID)
+	filteredEvents := m.events[:0]
+	for _, event := range m.events {
+		if event.WorkflowID != workflowID {
+			filteredEvents = append(filteredEvents, event)
+		}
+	}
+	m.events = filteredEvents
 	return nil
+}
+
+func (m *MemoryStore) SaveEvent(event EventRecord) error {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	cp := event
+	cp.Payload = core.DeepCopyMap(event.Payload)
+	m.events = append(m.events, cp)
+	return nil
+}
+
+func (m *MemoryStore) ListEvents(workflowID string, limit int) ([]EventRecord, error) {
+	m.mutex.RLock()
+	defer m.mutex.RUnlock()
+
+	if limit <= 0 {
+		limit = 200
+	}
+	events := make([]EventRecord, 0, limit)
+	for i := len(m.events) - 1; i >= 0 && len(events) < limit; i-- {
+		event := m.events[i]
+		if workflowID != "" && event.WorkflowID != workflowID {
+			continue
+		}
+		cp := event
+		cp.Payload = core.DeepCopyMap(event.Payload)
+		events = append(events, cp)
+	}
+
+	sort.Slice(events, func(i, j int) bool {
+		return events[i].Timestamp.Before(events[j].Timestamp)
+	})
+	return events, nil
 }

@@ -78,3 +78,14 @@ type CheckpointRecord struct {
 	StateData  []byte    `json:"stateData"` // JSON serialized workflow and task states
 	Timestamp  time.Time `json:"timestamp"`
 }
+
+type EventRecord struct {
+	ID         string         `json:"id"`
+	Type       string         `json:"type"`
+	WorkflowID string         `json:"workflowId"`
+	TaskID     string         `json:"taskId,omitempty"`
+	Severity   string         `json:"severity"`
+	Message    string         `json:"message"`
+	Payload    map[string]any `json:"payload,omitempty"`
+	Timestamp  time.Time      `json:"timestamp"`
+}

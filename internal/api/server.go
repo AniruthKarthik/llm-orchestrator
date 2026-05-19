@@ -68,6 +68,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/v1/workflows", s.handleCreateWorkflow)
 	mux.HandleFunc("GET /api/v1/workflows/{id}", s.handleGetWorkflow)
 	mux.HandleFunc("GET /api/v1/workflows/{id}/plan", s.handleGetWorkflowPlan)
+	mux.HandleFunc("GET /api/v1/workflows/{id}/events", s.handleListWorkflowEvents)
 	mux.HandleFunc("PUT /api/v1/workflows/{id}", s.handleUpdateWorkflow)
 	mux.HandleFunc("DELETE /api/v1/workflows/{id}", s.handleDeleteWorkflow)
 	mux.HandleFunc("POST /api/v1/workflows/{id}/execute", s.handleExecuteWorkflow)
@@ -78,6 +79,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/artifacts", s.handleListArtifacts)
 	mux.HandleFunc("GET /api/v1/queues", s.handleListQueues)
 	mux.HandleFunc("GET /api/v1/metrics", s.handleGetMetrics)
+	mux.HandleFunc("GET /api/v1/events", s.handleListEvents)
 
 	// WebSocket
 	mux.HandleFunc("GET /api/v1/ws", s.handleWebSocket)
@@ -608,6 +610,34 @@ func (s *Server) handleGetWorkflowPlan(w http.ResponseWriter, r *http.Request) {
 		Nodes:      nodes,
 		Edges:      edges,
 	})
+}
+
+func (s *Server) handleListWorkflowEvents(w http.ResponseWriter, r *http.Request) {
+	workflowID := r.PathValue("id")
+	events, err := s.store.ListEvents(workflowID, 500)
+	if err != nil {
+		slog.Error("listWorkflowEvents", "workflow_id", workflowID, "error", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if events == nil {
+		events = []store.EventRecord{}
+	}
+	writeJSON(w, http.StatusOK, events)
+}
+
+func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
+	workflowID := r.URL.Query().Get("workflowId")
+	events, err := s.store.ListEvents(workflowID, 500)
+	if err != nil {
+		slog.Error("listEvents", "workflow_id", workflowID, "error", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if events == nil {
+		events = []store.EventRecord{}
+	}
+	writeJSON(w, http.StatusOK, events)
 }
 
 func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {

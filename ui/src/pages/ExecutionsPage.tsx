@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import api from '@/api/client';
 import { cn } from '@/lib/utils';
+import type { WsEvent } from '@/hooks/useWebSocket';
 
 export default function ExecutionsPage() {
   const { events, isConnected } = useWsContext();
@@ -22,9 +23,13 @@ export default function ExecutionsPage() {
   const [approving, setApproving] = useState<string | null>(null);
   const [approvalError, setApprovalError] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
+  const [historyEvents, setHistoryEvents] = useState<WsEvent[]>([]);
 
   useEffect(() => {
     fetchProviders();
+    api.get('/events')
+      .then((response) => setHistoryEvents(response.data ?? []))
+      .catch(() => setHistoryEvents([]));
   }, [fetchProviders]);
 
   const handleApprove = async (workflowId: string, taskId: string) => {
@@ -64,7 +69,14 @@ export default function ExecutionsPage() {
     return 'border-border bg-transparent';
   };
 
-  const reversedEvents = [...events]
+  const eventMap = new Map<string, WsEvent>();
+  [...historyEvents, ...events].forEach((event) => {
+    const key = event.id ?? `${event.timestamp}-${event.type}-${event.workflowId}-${event.taskId ?? ''}`;
+    eventMap.set(key, event);
+  });
+  const combinedEvents = Array.from(eventMap.values());
+
+  const reversedEvents = [...combinedEvents]
     .reverse()
     .filter(
       (e) =>
@@ -219,7 +231,7 @@ export default function ExecutionsPage() {
               </div>
               <div>
                 <div className="text-xs text-muted-foreground mb-1">Total Session Events</div>
-                <div className="text-xl font-bold text-foreground">{events.length}</div>
+                <div className="text-xl font-bold text-foreground">{combinedEvents.length}</div>
               </div>
               <div>
                 <div className="text-xs text-muted-foreground mb-1">Filtered</div>
