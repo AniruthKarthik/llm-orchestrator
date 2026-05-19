@@ -4,6 +4,24 @@ import { useWorkflowStore } from '@/store/useWorkflowStore';
 import type { Artifact } from '@/types';
 
 function ArtifactPreviewModal({ artifact, onClose }: { artifact: Artifact; onClose: () => void }) {
+  // Intelligently extract actual text response if data is an object
+  let displayContent = artifact.data;
+  let isExtracted = false;
+
+  if (typeof artifact.data === 'object' && artifact.data !== null) {
+    const d = artifact.data as any;
+    if (d.response && typeof d.response === 'string') {
+      displayContent = d.response;
+      isExtracted = true;
+    } else if (d.output && typeof d.output === 'string') {
+      displayContent = d.output;
+      isExtracted = true;
+    }
+  }
+
+  const renderAsJson = !isExtracted && (artifact.type === 'JSON' || typeof displayContent !== 'string');
+  const renderAsCode = !isExtracted && artifact.type === 'CODE';
+
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div
@@ -26,18 +44,18 @@ function ArtifactPreviewModal({ artifact, onClose }: { artifact: Artifact; onClo
         </div>
         <div className="flex-1 overflow-auto bg-muted/5 p-6">
           <div className="max-w-3xl mx-auto">
-            {artifact.type === 'JSON' || typeof artifact.data !== 'string' ? (
+            {renderAsJson ? (
               <pre className="text-xs font-mono bg-[#0d1117] text-[#e6edf3] p-4 rounded-md overflow-auto whitespace-pre-wrap break-all shadow-inner border border-[#30363d]">
-                {JSON.stringify(artifact.data, null, 2)}
+                {JSON.stringify(displayContent, null, 2)}
               </pre>
-            ) : artifact.type === 'CODE' ? (
+            ) : renderAsCode ? (
               <pre className="text-xs font-mono bg-[#0d1117] text-[#e6edf3] p-4 rounded-md overflow-auto whitespace-pre-wrap break-all shadow-inner border border-[#30363d]">
-                {artifact.data}
+                {displayContent as string}
               </pre>
             ) : (
               <div className="prose prose-sm dark:prose-invert max-w-none">
                 <div className="text-[14px] leading-relaxed text-foreground whitespace-pre-wrap font-sans">
-                  {artifact.data}
+                  {displayContent as string}
                 </div>
               </div>
             )}
