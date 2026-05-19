@@ -117,10 +117,24 @@ function WorkflowResultsRow({ workflowId }: { workflowId: string }) {
                   )}
                   {task.output && Object.keys(task.output).length > 0 && (
                     <div className="bg-green-500/5 border border-green-500/20 rounded p-3">
-                      <p className="text-[10px] font-semibold text-green-700 mb-1 uppercase tracking-wider">Output</p>
-                      <pre className="text-xs text-foreground font-mono whitespace-pre-wrap break-all">
-                        {JSON.stringify(task.output, null, 2)}
-                      </pre>
+                      <p className="text-[10px] font-semibold text-green-700 mb-2 uppercase tracking-wider">Output</p>
+                      {task.output.response && typeof task.output.response === 'string' ? (
+                        <div className="prose prose-sm dark:prose-invert max-w-none">
+                          <div className="text-xs leading-relaxed text-foreground whitespace-pre-wrap font-sans bg-background/50 p-3 rounded border border-border/50">
+                            {task.output.response}
+                          </div>
+                        </div>
+                      ) : task.output.output && typeof task.output.output === 'string' ? (
+                        <div className="prose prose-sm dark:prose-invert max-w-none">
+                          <div className="text-xs leading-relaxed text-foreground whitespace-pre-wrap font-sans bg-background/50 p-3 rounded border border-border/50">
+                            {task.output.output}
+                          </div>
+                        </div>
+                      ) : (
+                        <pre className="text-xs text-foreground font-mono whitespace-pre-wrap break-all">
+                          {JSON.stringify(task.output, null, 2)}
+                        </pre>
+                      )}
                     </div>
                   )}
                   {task.input && Object.keys(task.input).length > 0 && (
