@@ -9,10 +9,12 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/AniruthKarthik/llm-orchestrator/internal/agents"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/core"
+	"github.com/AniruthKarthik/llm-orchestrator/internal/dag"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/events"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/executor"
 	"github.com/AniruthKarthik/llm-orchestrator/internal/providers"
@@ -65,6 +67,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/v1/workflows", s.handleListWorkflows)
 	mux.HandleFunc("POST /api/v1/workflows", s.handleCreateWorkflow)
 	mux.HandleFunc("GET /api/v1/workflows/{id}", s.handleGetWorkflow)
+	mux.HandleFunc("GET /api/v1/workflows/{id}/plan", s.handleGetWorkflowPlan)
 	mux.HandleFunc("PUT /api/v1/workflows/{id}", s.handleUpdateWorkflow)
 	mux.HandleFunc("DELETE /api/v1/workflows/{id}", s.handleDeleteWorkflow)
 	mux.HandleFunc("POST /api/v1/workflows/{id}/execute", s.handleExecuteWorkflow)
@@ -497,6 +500,92 @@ func (s *Server) handleGetWorkflow(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, WorkflowResponse{
 		WorkflowRecord: record,
 		Tasks:          tasksMap,
+	})
+}
+
+type executionPlanNode struct {
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	Status           string `json:"status"`
+	Attempt          int    `json:"attempt"`
+	MaxRetries       int    `json:"maxRetries"`
+	Provider         string `json:"provider,omitempty"`
+	Model            string `json:"model,omitempty"`
+	RequiresApproval bool   `json:"requiresApproval,omitempty"`
+}
+
+type executionPlanEdge struct {
+	ID     string `json:"id"`
+	Source string `json:"source"`
+	Target string `json:"target"`
+}
+
+type executionPlanResponse struct {
+	WorkflowID string               `json:"workflowId"`
+	Stages     []dag.ExecutionStage `json:"stages"`
+	Nodes      []executionPlanNode  `json:"nodes"`
+	Edges      []executionPlanEdge  `json:"edges"`
+}
+
+func (s *Server) handleGetWorkflowPlan(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	record, err := s.store.GetWorkflow(id)
+	if err != nil {
+		writeError(w, http.StatusNotFound, "workflow not found")
+		return
+	}
+
+	tasks, err := s.store.GetWorkflowTasks(id)
+	if err != nil {
+		slog.Error("getWorkflowPlan tasks", "error", err)
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	workflow := store.RecordToWorkflow(record, tasks)
+	plan, err := dag.NewTopologicalPlanner().BuildExecutionPlan(workflow)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid workflow DAG: "+err.Error())
+		return
+	}
+
+	nodes := make([]executionPlanNode, 0, len(tasks))
+	edges := make([]executionPlanEdge, 0)
+	sort.Slice(tasks, func(i, j int) bool {
+		return tasks[i].ID < tasks[j].ID
+	})
+	for _, task := range tasks {
+		maxRetries := 0
+		if task.RetryPolicy != nil {
+			maxRetries = task.RetryPolicy.MaxRetries
+		}
+		nodes = append(nodes, executionPlanNode{
+			ID:               task.ID,
+			Name:             task.Name,
+			Status:           task.Status,
+			Attempt:          task.Attempt,
+			MaxRetries:       maxRetries,
+			Provider:         task.Provider,
+			Model:            task.Model,
+			RequiresApproval: task.RequiresApproval,
+		})
+		for _, depID := range task.Dependencies {
+			edges = append(edges, executionPlanEdge{
+				ID:     fmt.Sprintf("e-%s-%s", depID, task.ID),
+				Source: depID,
+				Target: task.ID,
+			})
+		}
+	}
+	sort.Slice(edges, func(i, j int) bool {
+		return edges[i].ID < edges[j].ID
+	})
+
+	writeJSON(w, http.StatusOK, executionPlanResponse{
+		WorkflowID: id,
+		Stages:     plan.Stages,
+		Nodes:      nodes,
+		Edges:      edges,
 	})
 }
 

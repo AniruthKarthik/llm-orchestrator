@@ -1,6 +1,8 @@
 package dag
 
 import (
+	"sort"
+
 	"github.com/AniruthKarthik/llm-orchestrator/internal/core"
 )
 
@@ -85,6 +87,7 @@ func (p *TopologicalPlanner) collectZeroIndegree(
 			tasks = append(tasks, id)
 		}
 	}
+	sort.Strings(tasks)
 	return tasks
 }
 

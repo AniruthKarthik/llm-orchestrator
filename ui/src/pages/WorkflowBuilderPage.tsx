@@ -17,7 +17,7 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import TaskNode from '@/components/builder/TaskNode';
-import { Save, Play, Plus, ArrowLeft, Settings2, Loader2, AlertCircle, Terminal } from 'lucide-react';
+import { Save, Play, Plus, ArrowLeft, Settings2, Loader2, AlertCircle, Terminal, GitBranch } from 'lucide-react';
 import { useWorkflowStore } from '@/store/useWorkflowStore';
 import api from '@/api/client';
 import { cn } from '@/lib/utils';
@@ -27,6 +27,22 @@ import type { WsEvent } from '@/hooks/useWebSocket';
 const nodeTypes = {
   task: TaskNode,
 };
+
+interface ExecutionPlan {
+  workflowId: string;
+  stages: Array<{ level: number; taskIds: string[] }>;
+  nodes: Array<{
+    id: string;
+    name: string;
+    status: string;
+    attempt: number;
+    maxRetries: number;
+    provider?: string;
+    model?: string;
+    requiresApproval?: boolean;
+  }>;
+  edges: Array<{ id: string; source: string; target: string }>;
+}
 
 export default function WorkflowBuilderPage() {
   const { id } = useParams();
@@ -45,6 +61,8 @@ export default function WorkflowBuilderPage() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [savedWorkflowId, setSavedWorkflowId] = useState<string | null>(id !== 'new' ? id ?? null : null);
+  const [executionPlan, setExecutionPlan] = useState<ExecutionPlan | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
 
   // Live execution log
   interface ExecLog { type: string; taskId?: string; msg: string; time: string }
@@ -58,6 +76,18 @@ export default function WorkflowBuilderPage() {
       loadWorkflow(id);
     }
   }, [id, fetchProviders]);
+
+  const loadExecutionPlan = useCallback(async (wfId: string) => {
+    setPlanError(null);
+    try {
+      const response = await api.get(`/workflows/${wfId}/plan`);
+      setExecutionPlan(response.data as ExecutionPlan);
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to load execution plan';
+      setPlanError(msg);
+      setExecutionPlan(null);
+    }
+  }, []);
 
   // Subscribe to WS events for this workflow
   useEffect(() => {
@@ -102,6 +132,15 @@ export default function WorkflowBuilderPage() {
               n.id === e.taskId ? { ...n, data: { ...n.data, status: newStatus } } : n
             )
           );
+          setExecutionPlan((plan) => {
+            if (!plan) return plan;
+            return {
+              ...plan,
+              nodes: plan.nodes.map((n) =>
+                n.id === e.taskId ? { ...n, status: newStatus } : n
+              ),
+            };
+          });
         }
       }
 
@@ -163,6 +202,7 @@ export default function WorkflowBuilderPage() {
 
       setNodes(newNodes);
       setEdges(newEdges);
+      void loadExecutionPlan(wfId);
     } catch (error: unknown) {
       const msg =
         error instanceof Error ? error.message : 'Failed to load workflow';
@@ -264,9 +304,11 @@ export default function WorkflowBuilderPage() {
       if (isNew) {
         await api.post('/workflows', payload);
         setSavedWorkflowId(payload.id);
+        await loadExecutionPlan(payload.id);
         navigate(`/workflows/${payload.id}`, { replace: true });
       } else {
         await api.put(`/workflows/${savedWorkflowId}`, payload);
+        await loadExecutionPlan(savedWorkflowId);
       }
     } catch (error: unknown) {
       let msg = 'Failed to save workflow.';
@@ -305,6 +347,7 @@ export default function WorkflowBuilderPage() {
     setExecLogs([]);
     setShowExecPanel(true);
     const ok = await executeWorkflow(savedWorkflowId);
+    await loadExecutionPlan(savedWorkflowId);
     if (!ok) {
       setSaveError('Failed to start execution. Check that at least one LLM provider API key is set on the server.');
     }
@@ -398,6 +441,74 @@ export default function WorkflowBuilderPage() {
                 <Plus size={16} />
                 Add Task Node
               </button>
+            </Panel>
+            <Panel position="top-right" className="!mt-4 !mr-4">
+              <div className="w-[320px] max-h-[420px] overflow-y-auto rounded-md border border-border bg-card shadow-sm">
+                <div className="flex items-center justify-between border-b border-border px-3 py-2">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
+                    <GitBranch size={14} className="text-muted-foreground" />
+                    Execution Plan
+                  </div>
+                  {executionPlan && (
+                    <span className="text-[10px] text-muted-foreground">
+                      {executionPlan.nodes.length} tasks / {executionPlan.edges.length} deps
+                    </span>
+                  )}
+                </div>
+                <div className="p-3">
+                  {planError ? (
+                    <div className="rounded border border-red-500/20 bg-red-500/10 p-2 text-xs text-red-600">
+                      {planError}
+                    </div>
+                  ) : !savedWorkflowId || id === 'new' ? (
+                    <div className="text-xs text-muted-foreground">Save the workflow to compile its plan.</div>
+                  ) : !executionPlan ? (
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <Loader2 size={12} className="animate-spin" />
+                      Loading plan...
+                    </div>
+                  ) : executionPlan.stages.length === 0 ? (
+                    <div className="text-xs text-muted-foreground">No executable stages. Add at least one task.</div>
+                  ) : (
+                    <div className="space-y-3">
+                      {executionPlan.stages.map((stage) => (
+                        <div key={stage.level} className="space-y-1.5">
+                          <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            Stage {stage.level + 1}
+                          </div>
+                          <div className="space-y-1">
+                            {stage.taskIds.map((taskId) => {
+                              const task = executionPlan.nodes.find((n) => n.id === taskId);
+                              const status = (task?.status || 'PENDING').toUpperCase();
+                              const statusClass =
+                                status === 'COMPLETED' ? 'bg-green-500/10 text-green-700 border-green-500/20'
+                                : status === 'RUNNING' ? 'bg-blue-500/10 text-blue-700 border-blue-500/20'
+                                : status === 'FAILED' ? 'bg-red-500/10 text-red-700 border-red-500/20'
+                                : status === 'WAITING_FOR_APPROVAL' ? 'bg-amber-500/10 text-amber-700 border-amber-500/20'
+                                : 'bg-secondary text-muted-foreground border-border';
+                              return (
+                                <div key={taskId} className="flex items-center justify-between gap-2 rounded border border-border bg-background px-2 py-1.5">
+                                  <div className="min-w-0">
+                                    <div className="truncate text-xs font-medium text-foreground">{task?.name || taskId}</div>
+                                    <div className="truncate text-[10px] text-muted-foreground">
+                                      {taskId}
+                                      {task?.maxRetries ? ` · retries ${task.attempt}/${task.maxRetries}` : ''}
+                                      {task?.requiresApproval ? ' · approval' : ''}
+                                    </div>
+                                  </div>
+                                  <span className={cn('shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold', statusClass)}>
+                                    {status}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </Panel>
           </ReactFlow>
         </div>

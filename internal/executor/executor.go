@@ -168,6 +168,16 @@ func (e *Executor) execute(
 		default:
 		}
 
+		e.eventBus.Publish(events.Event{
+			Type:       events.StageStarted,
+			WorkflowID: workflow.ID,
+			Timestamp:  time.Now(),
+			Payload: map[string]any{
+				"level":   stage.Level,
+				"taskIds": stage.TaskIDs,
+			},
+		})
+
 		var wg sync.WaitGroup
 		errChan := make(chan error, len(stage.TaskIDs))
 
@@ -218,6 +228,16 @@ func (e *Executor) execute(
 		if stageErr != nil {
 			wfFailurePolicy := workflow.GetFailurePolicy()
 			if wfFailurePolicy == core.FailurePolicyContinueOnFailure {
+				e.eventBus.Publish(events.Event{
+					Type:       events.StageFailed,
+					WorkflowID: workflow.ID,
+					Timestamp:  time.Now(),
+					Payload: map[string]any{
+						"level":   stage.Level,
+						"taskIds": stage.TaskIDs,
+						"error":   stageErr.Error(),
+					},
+				})
 				continue
 			}
 
@@ -238,8 +258,29 @@ func (e *Executor) execute(
 				},
 			})
 
+			e.eventBus.Publish(events.Event{
+				Type:       events.StageFailed,
+				WorkflowID: workflow.ID,
+				Timestamp:  time.Now(),
+				Payload: map[string]any{
+					"level":   stage.Level,
+					"taskIds": stage.TaskIDs,
+					"error":   stageErr.Error(),
+				},
+			})
+
 			return stageErr
 		}
+
+		e.eventBus.Publish(events.Event{
+			Type:       events.StageCompleted,
+			WorkflowID: workflow.ID,
+			Timestamp:  time.Now(),
+			Payload: map[string]any{
+				"level":   stage.Level,
+				"taskIds": stage.TaskIDs,
+			},
+		})
 
 		// Create a checkpoint after each successful stage
 		if cpData, err := workflow.CreateCheckpoint(); err == nil {
@@ -415,7 +456,6 @@ func (e *Executor) executeTask(
 
 	finalHandler := ApplyTaskMiddleware(handler, middlewares...)
 	output, err := finalHandler(ctx, execCtx, task)
-
 
 	// Execution Interceptors (After)
 	for _, p := range e.pluginRegistry.List(plugin.PluginTypeObserver) {

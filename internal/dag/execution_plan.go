@@ -1,13 +1,13 @@
 package dag
 
 type ExecutionStage struct {
-	Level   int
-	TaskIDs []string
+	Level   int      `json:"level"`
+	TaskIDs []string `json:"taskIds"`
 }
 
 type ExecutionPlan struct {
-	WorkflowID string
-	Stages     []ExecutionStage
+	WorkflowID string           `json:"workflowId"`
+	Stages     []ExecutionStage `json:"stages"`
 }
 
 func NewExecutionPlan(workflowID string) *ExecutionPlan {
