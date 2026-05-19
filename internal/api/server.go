@@ -661,6 +661,9 @@ func (s *Server) handleUpdateWorkflow(w http.ResponseWriter, r *http.Request) {
 
 	record.Name = req.Name
 	record.Description = req.Description
+	record.Status = string(core.WorkflowPending)
+	record.StartedAt = nil
+	record.FinishedAt = nil
 	if err := s.store.UpdateWorkflow(record); err != nil {
 		slog.Error("updateWorkflow", "error", err)
 		writeError(w, http.StatusInternalServerError, err.Error())
@@ -750,6 +753,19 @@ func (s *Server) handleExecuteWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	workflow := store.RecordToWorkflow(record, tasks)
+	
+	// Reset workflow state for re-execution
+	workflow.Status = core.WorkflowPending
+	workflow.StartedAt = nil
+	workflow.FinishedAt = nil
+	for _, task := range workflow.Tasks {
+		task.Status = core.TaskPending
+		task.StartedAt = nil
+		task.FinishedAt = nil
+		task.Output = nil
+		task.Error = ""
+	}
+
 	if err := validateExecutableWorkflow(workflow, tasks); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
