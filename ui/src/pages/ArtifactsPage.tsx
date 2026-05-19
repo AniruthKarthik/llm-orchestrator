@@ -24,15 +24,28 @@ function ArtifactPreviewModal({ artifact, onClose }: { artifact: Artifact; onClo
             <X size={18} />
           </button>
         </div>
-        <div className="flex-1 overflow-auto p-4">
-          <pre className="text-xs font-mono bg-[#0d1117] text-[#e6edf3] p-4 rounded-md overflow-auto whitespace-pre-wrap break-all">
-            {typeof artifact.data === 'string'
-              ? artifact.data
-              : JSON.stringify(artifact.data, null, 2)}
-          </pre>
+        <div className="flex-1 overflow-auto bg-muted/5 p-6">
+          <div className="max-w-3xl mx-auto">
+            {artifact.type === 'JSON' || typeof artifact.data !== 'string' ? (
+              <pre className="text-xs font-mono bg-[#0d1117] text-[#e6edf3] p-4 rounded-md overflow-auto whitespace-pre-wrap break-all shadow-inner border border-[#30363d]">
+                {JSON.stringify(artifact.data, null, 2)}
+              </pre>
+            ) : artifact.type === 'CODE' ? (
+              <pre className="text-xs font-mono bg-[#0d1117] text-[#e6edf3] p-4 rounded-md overflow-auto whitespace-pre-wrap break-all shadow-inner border border-[#30363d]">
+                {artifact.data}
+              </pre>
+            ) : (
+              <div className="prose prose-sm dark:prose-invert max-w-none">
+                <div className="text-[14px] leading-relaxed text-foreground whitespace-pre-wrap font-sans">
+                  {artifact.data}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-        <div className="p-3 border-t border-border text-xs text-muted-foreground">
-          Created: {new Date(artifact.createdAt).toLocaleString()} · Type: {artifact.type}
+        <div className="p-3 bg-card border-t border-border text-[11px] text-muted-foreground flex justify-between">
+          <span>Created: {new Date(artifact.createdAt).toLocaleString()}</span>
+          <span className="uppercase font-semibold tracking-wider">{artifact.type}</span>
         </div>
       </div>
     </div>

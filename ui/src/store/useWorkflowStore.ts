@@ -129,6 +129,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       const response = await api.post('/workflows', workflow);
       // Refresh list after creation
       get().fetchWorkflows();
+      // Only import toast inside the module to avoid circular deps if any
+      const { toast } = await import('@/store/useToastStore');
+      toast.success(`Workflow created successfully!`);
       return response.data as Workflow;
     } catch (error: unknown) {
       const msg = extractErrorMessage(error);

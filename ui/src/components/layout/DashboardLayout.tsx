@@ -16,6 +16,7 @@ import { useWebSocket } from '@/hooks/useWebSocket';
 import { WsContext } from '@/context/WsContext';
 import { useStorageMode } from '@/hooks/useStorageMode';
 import { InMemoryBanner } from '@/components/ui/InMemoryBanner';
+import { toast } from '@/store/useToastStore';
 
 interface SidebarItemProps {
   icon: React.ReactNode;
@@ -57,6 +58,30 @@ export const DashboardLayout = ({ children }: { children: React.ReactNode }) => 
     { icon: <Database size={16} />, label: 'Artifacts & Memory', to: '/artifacts' },
     { icon: <Settings size={16} />, label: 'Settings', to: '/config' },
   ];
+
+  React.useEffect(() => {
+    return addListener((e) => {
+      switch (e.type) {
+        case 'WORKFLOW_STARTED':
+          toast.info(`Workflow execution started`);
+          break;
+        case 'WORKFLOW_COMPLETED':
+          toast.success(`Workflow completed successfully`);
+          break;
+        case 'WORKFLOW_FAILED':
+          const err = (e.payload as any)?.error || 'Unknown error';
+          toast.error(`Workflow failed: ${err}`);
+          break;
+        case 'TASK_FAILED':
+          const terr = (e.payload as any)?.error || 'Unknown error';
+          toast.error(`Task ${e.taskId} failed: ${terr}`);
+          break;
+        case 'TASK_WAITING_FOR_APPROVAL':
+          toast.warning(`Task ${e.taskId} requires manual approval`);
+          break;
+      }
+    });
+  }, [addListener]);
 
   const allItems = [...primaryItems, ...secondaryItems];
 
