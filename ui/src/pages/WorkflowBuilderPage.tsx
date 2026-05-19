@@ -439,6 +439,9 @@ export default function WorkflowBuilderPage() {
             onPaneClick={() => setSelectedNode(null)}
             nodeTypes={nodeTypes as never}
             fitView
+            fitViewOptions={{ padding: 0.2 }}
+            minZoom={0.2}
+            maxZoom={1.5}
             className="[&_.react-flow__controls-button]:bg-card [&_.react-flow__controls-button]:border-border [&_.react-flow__controls-button]:fill-foreground"
           >
             <Background color="var(--color-border)" gap={24} variant={BackgroundVariant.Dots} />
