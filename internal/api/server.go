@@ -420,6 +420,27 @@ func taskFromRequest(workflowID string, tr TaskRequest) *core.Task {
 	return task
 }
 
+func validateExecutableWorkflow(workflow *core.Workflow, tasks []store.TaskRecord) error {
+	if len(tasks) == 0 {
+		return errors.New("workflow has no tasks to execute")
+	}
+	if _, err := dag.NewTopologicalPlanner().BuildExecutionPlan(workflow); err != nil {
+		return fmt.Errorf("invalid workflow DAG: %w", err)
+	}
+	for _, task := range tasks {
+		if task.Provider == "" {
+			continue
+		}
+		if task.Model == "" {
+			return fmt.Errorf("task %s has provider %q but no model", task.ID, task.Provider)
+		}
+		if _, err := providers.Get(task.Provider); err != nil {
+			return fmt.Errorf("task %s uses unavailable provider %q: %w", task.ID, task.Provider, err)
+		}
+	}
+	return nil
+}
+
 func (s *Server) handleCreateWorkflow(w http.ResponseWriter, r *http.Request) {
 	var req CreateWorkflowRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -694,6 +715,10 @@ func (s *Server) handleExecuteWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	workflow := store.RecordToWorkflow(record, tasks)
+	if err := validateExecutableWorkflow(workflow, tasks); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	// Re-register agents from task metadata so they survive a server restart
 	for _, task := range workflow.Tasks {
@@ -713,6 +738,20 @@ func (s *Server) handleExecuteWorkflow(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		if err := s.executor.Execute(workflow); err != nil {
 			slog.Error("workflow execution error", "workflow_id", id, "error", err)
+			if rec, getErr := s.store.GetWorkflow(id); getErr == nil && rec.Status != string(core.WorkflowFailed) {
+				rec.Status = string(core.WorkflowFailed)
+				now := time.Now()
+				rec.FinishedAt = &now
+				_ = s.store.UpdateWorkflow(rec)
+				s.eb.Publish(events.Event{
+					Type:       events.WorkflowFailed,
+					WorkflowID: id,
+					Timestamp:  now,
+					Payload: map[string]any{
+						"error": err.Error(),
+					},
+				})
+			}
 		}
 	}()
 

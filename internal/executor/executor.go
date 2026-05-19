@@ -385,8 +385,7 @@ func (e *Executor) executeTask(
 			_ = e.store.UpdateTask(store.TaskToRecord(workflow.ID, task))
 			return err
 		}
-		retryWorker := NewRetryWorkerWrapper(worker, e.eventBus)
-		handler = retryWorker.Execute
+		handler = worker.Execute
 	}
 
 	if err := task.Start(); err != nil {
@@ -455,7 +454,7 @@ func (e *Executor) executeTask(
 	e.mu.RUnlock()
 
 	finalHandler := ApplyTaskMiddleware(handler, middlewares...)
-	output, err := finalHandler(ctx, execCtx, task)
+	output, err := e.executeWithRetry(ctx, execCtx, workflow.ID, task, finalHandler)
 
 	// Execution Interceptors (After)
 	for _, p := range e.pluginRegistry.List(plugin.PluginTypeObserver) {
@@ -506,4 +505,68 @@ func (e *Executor) executeTask(
 	})
 
 	return nil
+}
+
+func (e *Executor) executeWithRetry(
+	ctx context.Context,
+	execCtx *ExecutionContext,
+	workflowID string,
+	task *core.Task,
+	handler TaskHandler,
+) (map[string]any, error) {
+	policy := task.RetryPolicy
+	if policy == nil {
+		policy = &core.RetryPolicy{
+			MaxRetries: 0,
+			Strategy:   core.RetryStrategyImmediate,
+		}
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= policy.MaxRetries+1; attempt++ {
+		task.SetAttempt(attempt)
+		_ = e.store.UpdateTask(store.TaskToRecord(workflowID, task))
+
+		output, err := handler(ctx, execCtx, task)
+		if err == nil {
+			return output, nil
+		}
+		lastErr = err
+
+		if attempt > policy.MaxRetries {
+			break
+		}
+
+		delay := policy.CalculateDelay(attempt)
+		e.eventBus.Publish(events.Event{
+			Type:       events.TaskRetried,
+			TaskID:     task.ID,
+			WorkflowID: workflowID,
+			Timestamp:  time.Now(),
+			Payload: map[string]any{
+				"attempt":     attempt,
+				"nextAttempt": attempt + 1,
+				"maxRetries":  policy.MaxRetries,
+				"error":       err.Error(),
+				"delay":       delay.String(),
+			},
+		})
+
+		slog.Warn("task retry scheduled",
+			"workflow_id", workflowID,
+			"task_id", task.ID,
+			"attempt", attempt,
+			"max_retries", policy.MaxRetries,
+			"delay", delay.String(),
+			"error", err,
+		)
+
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+
+	return nil, lastErr
 }

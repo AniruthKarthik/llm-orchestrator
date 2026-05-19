@@ -142,6 +142,18 @@ export default function WorkflowBuilderPage() {
             };
           });
         }
+        if (e.type === 'TASK_RETRIED') {
+          const attempt = Number(e.payload?.nextAttempt ?? e.payload?.attempt ?? 0);
+          setExecutionPlan((plan) => {
+            if (!plan) return plan;
+            return {
+              ...plan,
+              nodes: plan.nodes.map((n) =>
+                n.id === e.taskId ? { ...n, attempt } : n
+              ),
+            };
+          });
+        }
       }
 
       // Scroll to bottom of log
