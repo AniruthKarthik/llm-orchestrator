@@ -219,7 +219,7 @@ export default function ArtifactsPage() {
                       </div>
                       <button
                         onClick={() => setPreview(art)}
-                        className="px-3 py-1.5 bg-primary text-primary-foreground text-xs font-bold rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:opacity-90"
+                        className="px-3 py-1.5 bg-primary text-primary-foreground text-xs font-bold rounded-md transition-opacity hover:opacity-90"
                       >
                         Preview
                       </button>

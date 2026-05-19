@@ -121,26 +121,59 @@ func (e *AgentExecutor) Execute(ctx context.Context, agentID string, task *core.
 			artifacts := e.artifactRegistry.ListByWorkflow(task.WorkflowID)
 			if len(artifacts) > 0 {
 				stitcher := NewContextStitcher(4000) // Default limit for example
-				
+
 				artifactStrings := make([]string, 0, len(artifacts))
 				for _, a := range artifacts {
-					artifactStrings = append(artifactStrings, fmt.Sprintf("- Artifact: %s (Type: %s, From Task: %s)\n  Data: %v", a.Name, a.Type, a.TaskID, a.Data))
+					dataJSON, _ := json.MarshalIndent(a.Data, "  ", "  ")
+					artifactStrings = append(artifactStrings, fmt.Sprintf("- Artifact: %s (Type: %s, From Task: %s)\n  Data: %s", a.Name, a.Type, a.TaskID, string(dataJSON)))
 				}
-				
-				contextMsg := "The following artifacts are available from previous tasks in this workflow:\n"
+
+				contextMsg := "The following artifacts are available from previous tasks in this workflow. You can reference them by their name or the data provided below:\n"
 				contextMsg += stitcher.StitchArtifacts(artifactStrings)
-				
+
 				messages = append(messages, providers.Message{Role: "system", Content: contextMsg})
 			}
 		}
-		
-		// If task has input prompt
-		if prompt, ok := task.Input["prompt"].(string); ok {
-			messages = append(messages, providers.Message{Role: "user", Content: prompt})
+
+		// Prepare user prompt with interpolation
+		userPrompt := ""
+		if prompt, ok := task.Input["prompt"].(string); ok && prompt != "" {
+			userPrompt = prompt
 		} else {
 			// fallback generic prompt
-			messages = append(messages, providers.Message{Role: "user", Content: fmt.Sprintf("Execute task: %s. Description: %s", task.Name, task.Description)})
+			userPrompt = fmt.Sprintf("Execute task: %s. Description: %s", task.Name, task.Description)
 		}
+
+		// 3. Template Interpolation: Replace {{Task Name.field}} with actual values
+		if e.artifactRegistry != nil {
+			artifacts := e.artifactRegistry.ListByWorkflow(task.WorkflowID)
+			for _, a := range artifacts {
+				// Remove " Output" suffix from artifact name for easier referencing if it exists
+				cleanName := strings.TrimSuffix(a.Name, " Output")
+				
+				// Try to replace {{TaskName}} with the whole data
+				dataJSON, _ := json.Marshal(a.Data)
+				placeholder := fmt.Sprintf("{{%s}}", cleanName)
+				userPrompt = strings.ReplaceAll(userPrompt, placeholder, string(dataJSON))
+
+				// If data is a map, allow referencing specific fields: {{TaskName.field}}
+				if dataMap, ok := a.Data.(map[string]any); ok {
+					for k, v := range dataMap {
+						fieldPlaceholder := fmt.Sprintf("{{%s.%s}}", cleanName, k)
+						valStr := fmt.Sprintf("%v", v)
+						if vs, ok := v.(string); ok {
+							valStr = vs
+						} else {
+							vj, _ := json.Marshal(v)
+							valStr = string(vj)
+						}
+						userPrompt = strings.ReplaceAll(userPrompt, fieldPlaceholder, valStr)
+					}
+				}
+			}
+		}
+
+		messages = append(messages, providers.Message{Role: "user", Content: userPrompt})
 
 		req := providers.GenerateRequest{
 			Model:    agent.Model,
