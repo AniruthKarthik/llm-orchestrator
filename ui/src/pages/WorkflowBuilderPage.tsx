@@ -113,6 +113,7 @@ export default function WorkflowBuilderPage() {
           ),
           timeoutMs: task.timeout ? Math.max(1000, Math.round(Number(task.timeout) / 1_000_000)) : 30000,
           requiresApproval: Boolean(task.requiresApproval),
+          onDelete: deleteTask,
         },
       }));
 
@@ -125,8 +126,9 @@ export default function WorkflowBuilderPage() {
             source: depId,
             target: task.id as string,
             type: 'smoothstep',
-            markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--color-muted-foreground)' },
-            style: { stroke: 'var(--color-border)', strokeWidth: 2 },
+            animated: true,
+            markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--color-primary)' },
+            style: { stroke: 'var(--color-primary)', strokeWidth: 2 },
           });
         });
       });
@@ -221,14 +223,23 @@ export default function WorkflowBuilderPage() {
     return unsubscribe;
   }, [savedWorkflowId, addListener, setNodes]);
 
+  const deleteTask = useCallback((id: string) => {
+    setNodes((nds) => nds.filter((node) => node.id !== id));
+    setEdges((eds) => eds.filter((edge) => edge.source !== id && edge.target !== id));
+    if (selectedNode?.id === id) {
+      setSelectedNode(null);
+    }
+  }, [setNodes, setEdges, selectedNode]);
+
   const onConnect = useCallback((params: Connection) => {
     setEdges((eds) =>
       addEdge(
         {
           ...params,
           type: 'smoothstep',
-          markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--color-muted-foreground)' },
-          style: { stroke: 'var(--color-border)', strokeWidth: 2 },
+          animated: true,
+          markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--color-primary)' },
+          style: { stroke: 'var(--color-primary)', strokeWidth: 2 },
         },
         eds
       )
@@ -250,6 +261,7 @@ export default function WorkflowBuilderPage() {
         maxRetries: 3,
         timeoutMs: 30000,
         requiresApproval: false,
+        onDelete: deleteTask,
       },
     };
     setNodes((nds) => nds.concat(newNode));
@@ -442,6 +454,7 @@ export default function WorkflowBuilderPage() {
             fitViewOptions={{ padding: 0.2 }}
             minZoom={0.2}
             maxZoom={1.5}
+            connectionLineStyle={{ stroke: 'var(--color-primary)', strokeWidth: 2 }}
             className="[&_.react-flow__controls-button]:bg-card [&_.react-flow__controls-button]:border-border [&_.react-flow__controls-button]:fill-foreground"
           >
             <Background color="var(--color-border)" gap={24} variant={BackgroundVariant.Dots} />

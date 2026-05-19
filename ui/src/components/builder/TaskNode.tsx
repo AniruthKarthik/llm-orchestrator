@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
-import { CheckCircle2, Clock, AlertCircle, PlayCircle, MoreHorizontal } from 'lucide-react';
+import { CheckCircle2, Clock, AlertCircle, PlayCircle, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export type TaskNodeData = {
@@ -10,9 +10,10 @@ export type TaskNodeData = {
   provider?: string;
   model?: string;
   onEdit?: () => void;
+  onDelete?: (id: string) => void;
 };
 
-const TaskNode = ({ data, selected }: NodeProps<Node<TaskNodeData>>) => {
+const TaskNode = ({ id, data, selected }: NodeProps<Node<TaskNodeData>>) => {
   const getStatusIcon = () => {
     switch (data.status?.toUpperCase()) {
       case 'COMPLETED': return <CheckCircle2 className="text-green-500" size={14} />;
@@ -36,7 +37,9 @@ const TaskNode = ({ data, selected }: NodeProps<Node<TaskNodeData>>) => {
   return (
     <div className={cn(
       "w-[260px] shadow-sm rounded-md bg-card border transition-all flex flex-col overflow-hidden text-left",
-      selected ? "border-primary ring-1 ring-primary" : "border-border hover:border-muted-foreground/50"
+      selected 
+        ? "border-primary ring-1 ring-primary" 
+        : "border-border hover:border-muted-foreground/50"
     )}>
       {/* Top Status Bar */}
       <div className={cn("h-1 w-full", getStatusColor())} />
@@ -52,11 +55,12 @@ const TaskNode = ({ data, selected }: NodeProps<Node<TaskNodeData>>) => {
           <button 
             onClick={(e) => {
               e.stopPropagation();
-              data.onEdit?.();
+              data.onDelete?.(id);
             }}
-            className="text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded-sm hover:bg-secondary"
+            className="text-muted-foreground hover:text-red-500 transition-colors p-1 rounded-sm hover:bg-red-50"
+            title="Delete task"
           >
-            <MoreHorizontal size={14} />
+            <Trash2 size={14} />
           </button>
         </div>
 
