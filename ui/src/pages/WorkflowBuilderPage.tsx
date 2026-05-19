@@ -628,7 +628,7 @@ export default function WorkflowBuilderPage() {
                       onChange={(e) => updateNodeData(selectedNode.id, { provider: e.target.value, model: '' })}
                       className="w-full bg-background border border-border rounded-md px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
                     >
-                      <option value="">Auto-Route (Recommended)</option>
+                      <option value="" disabled>Select Provider</option>
                       {providers.data.map((p) => (
                         <option key={p.name} value={p.name}>{p.name}</option>
                       ))}
