@@ -33,12 +33,19 @@ lint: ## Run golangci-lint (install: https://golangci-lint.run/usage/install/)
 
 # ─── Run ──────────────────────────────────────────────────────────────────────
 
-run: build-backend ## Build and start the production server
+run: build ## Build everything and start the production server
+	@echo "Starting server and opening browser at http://localhost:$(PORT)..."
+	@echo "Press Ctrl+C to stop the server."
+	@trap 'kill 0' EXIT; \
+	(sleep 2 && (xdg-open http://localhost:$(PORT) || open http://localhost:$(PORT) || explorer "http://localhost:$(PORT)" || true)) & \
 	SERVER_PORT=:$(PORT) ./server
 
 run-dev: ## Start backend (hot-reload with Air) + UI dev server in parallel
 	@echo "Starting backend with Air and UI dev server..."
-	@air -c .air.toml & cd ui && npm run dev
+	@echo "Press Ctrl+C to stop both servers."
+	@trap 'kill 0' EXIT; \
+	air -c .air.toml & \
+	cd ui && npm run dev -- --open
 
 # ─── Docker ───────────────────────────────────────────────────────────────────
 
