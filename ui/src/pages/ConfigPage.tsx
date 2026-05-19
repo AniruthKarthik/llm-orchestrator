@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Save, AlertCircle, CheckCircle2, FileCode, Server, Key, Database } from 'lucide-react';
 import api from '@/api/client';
 import { cn } from '@/lib/utils';
@@ -12,11 +12,7 @@ export default function ConfigPage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [activeTab] = useState<Tab>('infrastructure');
 
-  useEffect(() => {
-    fetchCompose();
-  }, []);
-
-  const fetchCompose = async () => {
+  const fetchCompose = useCallback(async () => {
     setIsLoading(true);
     setMessage(null);
     try {
@@ -34,7 +30,11 @@ export default function ConfigPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    queueMicrotask(() => void fetchCompose());
+  }, [fetchCompose]);
 
   const saveCompose = async () => {
     if (!composeContent.trim()) {

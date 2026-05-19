@@ -70,13 +70,6 @@ export default function WorkflowBuilderPage() {
   const [showExecPanel, setShowExecPanel] = useState(false);
   const logsEndRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    fetchProviders();
-    if (id && id !== 'new') {
-      loadWorkflow(id);
-    }
-  }, [id, fetchProviders]);
-
   const loadExecutionPlan = useCallback(async (wfId: string) => {
     setPlanError(null);
     try {
@@ -89,81 +82,7 @@ export default function WorkflowBuilderPage() {
     }
   }, []);
 
-  // Subscribe to WS events for this workflow
-  useEffect(() => {
-    const currentWfId = savedWorkflowId;
-    if (!currentWfId) return;
-
-    const unsubscribe = addListener((e: WsEvent) => {
-      if (e.workflowId !== currentWfId) return;
-
-      const time = new Date().toLocaleTimeString();
-      let msg = '';
-
-      switch (e.type) {
-        case 'WORKFLOW_STARTED':   msg = 'Workflow execution started'; break;
-        case 'WORKFLOW_COMPLETED': msg = '✓ Workflow completed successfully'; break;
-        case 'WORKFLOW_FAILED':    msg = `✗ Workflow failed: ${(e.payload?.error as string) ?? 'unknown error'}`; break;
-        case 'TASK_STARTED':       msg = `Task started: ${e.taskId}`; break;
-        case 'TASK_COMPLETED':     msg = `✓ Task completed: ${e.taskId}`; break;
-        case 'TASK_FAILED': {
-          const errMsg = (e.payload?.error as string) ?? 'unknown error';
-          msg = `✗ Task failed: ${e.taskId} — ${errMsg}`;
-          break;
-        }
-        case 'TASK_WAITING_FOR_APPROVAL': msg = `⏸ Task waiting for approval: ${e.taskId}`; break;
-        default: msg = `${e.type} — task: ${e.taskId ?? 'n/a'}`;
-      }
-
-      setExecLogs((prev) => [...prev, { type: e.type, taskId: e.taskId, msg, time }]);
-
-      // Update node status on canvas
-      if (e.taskId) {
-        const statusMap: Record<string, string> = {
-          TASK_STARTED: 'RUNNING',
-          TASK_COMPLETED: 'COMPLETED',
-          TASK_FAILED: 'FAILED',
-          TASK_WAITING_FOR_APPROVAL: 'WAITING_FOR_APPROVAL',
-        };
-        const newStatus = statusMap[e.type];
-        if (newStatus) {
-          setNodes((nds) =>
-            nds.map((n) =>
-              n.id === e.taskId ? { ...n, data: { ...n.data, status: newStatus } } : n
-            )
-          );
-          setExecutionPlan((plan) => {
-            if (!plan) return plan;
-            return {
-              ...plan,
-              nodes: plan.nodes.map((n) =>
-                n.id === e.taskId ? { ...n, status: newStatus } : n
-              ),
-            };
-          });
-        }
-        if (e.type === 'TASK_RETRIED') {
-          const attempt = Number(e.payload?.nextAttempt ?? e.payload?.attempt ?? 0);
-          setExecutionPlan((plan) => {
-            if (!plan) return plan;
-            return {
-              ...plan,
-              nodes: plan.nodes.map((n) =>
-                n.id === e.taskId ? { ...n, attempt } : n
-              ),
-            };
-          });
-        }
-      }
-
-      // Scroll to bottom of log
-      setTimeout(() => logsEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
-    });
-
-    return unsubscribe;
-  }, [savedWorkflowId, addListener]);
-
-  const loadWorkflow = async (wfId: string) => {
+  const loadWorkflow = useCallback(async (wfId: string) => {
     setLoadError(null);
     try {
       const response = await api.get(`/workflows/${wfId}`);
@@ -221,7 +140,86 @@ export default function WorkflowBuilderPage() {
       setLoadError(msg);
       console.error('Failed to load workflow:', error);
     }
-  };
+  }, [loadExecutionPlan, setEdges, setNodes]);
+
+  useEffect(() => {
+    fetchProviders();
+    if (id && id !== 'new') {
+      queueMicrotask(() => void loadWorkflow(id));
+    }
+  }, [id, fetchProviders, loadWorkflow]);
+
+  // Subscribe to WS events for this workflow
+  useEffect(() => {
+    const currentWfId = savedWorkflowId;
+    if (!currentWfId) return;
+
+    const unsubscribe = addListener((e: WsEvent) => {
+      if (e.workflowId !== currentWfId) return;
+
+      const time = new Date().toLocaleTimeString();
+      let msg = '';
+
+      switch (e.type) {
+        case 'WORKFLOW_STARTED':   msg = 'Workflow execution started'; break;
+        case 'WORKFLOW_COMPLETED': msg = '✓ Workflow completed successfully'; break;
+        case 'WORKFLOW_FAILED':    msg = `✗ Workflow failed: ${(e.payload?.error as string) ?? 'unknown error'}`; break;
+        case 'TASK_STARTED':       msg = `Task started: ${e.taskId}`; break;
+        case 'TASK_COMPLETED':     msg = `✓ Task completed: ${e.taskId}`; break;
+        case 'TASK_FAILED': {
+          const errMsg = (e.payload?.error as string) ?? 'unknown error';
+          msg = `✗ Task failed: ${e.taskId} — ${errMsg}`;
+          break;
+        }
+        case 'TASK_WAITING_FOR_APPROVAL': msg = `⏸ Task waiting for approval: ${e.taskId}`; break;
+        default: msg = `${e.type} — task: ${e.taskId ?? 'n/a'}`;
+      }
+
+      setExecLogs((prev) => [...prev, { type: e.type, taskId: e.taskId, msg, time }]);
+
+      if (e.taskId) {
+        const statusMap: Record<string, string> = {
+          TASK_STARTED: 'RUNNING',
+          TASK_COMPLETED: 'COMPLETED',
+          TASK_FAILED: 'FAILED',
+          TASK_WAITING_FOR_APPROVAL: 'WAITING_FOR_APPROVAL',
+        };
+        const newStatus = statusMap[e.type];
+        if (newStatus) {
+          setNodes((nds) =>
+            nds.map((n) =>
+              n.id === e.taskId ? { ...n, data: { ...n.data, status: newStatus } } : n
+            )
+          );
+          setExecutionPlan((plan) => {
+            if (!plan) return plan;
+            return {
+              ...plan,
+              nodes: plan.nodes.map((n) =>
+                n.id === e.taskId ? { ...n, status: newStatus } : n
+              ),
+            };
+          });
+        }
+        if (e.type === 'TASK_RETRIED') {
+          const attempt = Number(e.payload?.nextAttempt ?? e.payload?.attempt ?? 0);
+          setExecutionPlan((plan) => {
+            if (!plan) return plan;
+            return {
+              ...plan,
+              nodes: plan.nodes.map((n) =>
+                n.id === e.taskId ? { ...n, attempt } : n
+              ),
+            };
+          });
+        }
+      }
+
+      setTimeout(() => logsEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+    });
+
+    return unsubscribe;
+  }, [savedWorkflowId, addListener, setNodes]);
 
   const onConnect = useCallback((params: Connection) => {
     setEdges((eds) =>

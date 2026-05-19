@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Handle, Position, type NodeProps } from '@xyflow/react';
+import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import { CheckCircle2, Clock, AlertCircle, PlayCircle, MoreHorizontal } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -12,7 +12,7 @@ export type TaskNodeData = {
   onEdit?: () => void;
 };
 
-const TaskNode = ({ data, selected }: NodeProps<any>) => {
+const TaskNode = ({ data, selected }: NodeProps<Node<TaskNodeData>>) => {
   const getStatusIcon = () => {
     switch (data.status?.toUpperCase()) {
       case 'COMPLETED': return <CheckCircle2 className="text-green-500" size={14} />;
