@@ -43,6 +43,7 @@ func main() {
 
 	// 2. Initialize Store
 	var s store.Store
+	storageMode := "memory"
 	if cfg.Database.URL != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
@@ -54,6 +55,7 @@ func main() {
 		} else {
 			slog.Info("connected to PostgreSQL")
 			s = pgStore
+			storageMode = "postgres"
 		}
 	} else {
 		slog.Info("DATABASE_URL not set, using in-memory store (data will not persist)")
@@ -104,7 +106,7 @@ func main() {
 	}
 
 	// 7. Build HTTP Server
-	srv := api.NewServer(exec, s, eb)
+	srv := api.NewServer(exec, s, eb, storageMode)
 	handler := srv.Routes()
 
 	httpServer := &http.Server{

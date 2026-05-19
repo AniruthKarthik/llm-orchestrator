@@ -12,10 +12,10 @@ export default function AgentsPage() {
 
   const filtered = agents.data.filter(
     (a) =>
-      a.Name?.toLowerCase().includes(search.toLowerCase()) ||
-      a.Role?.toLowerCase().includes(search.toLowerCase()) ||
-      a.Provider?.toLowerCase().includes(search.toLowerCase()) ||
-      a.ID?.toLowerCase().includes(search.toLowerCase())
+      a.name?.toLowerCase().includes(search.toLowerCase()) ||
+      a.role?.toLowerCase().includes(search.toLowerCase()) ||
+      a.provider?.toLowerCase().includes(search.toLowerCase()) ||
+      a.id?.toLowerCase().includes(search.toLowerCase())
   );
 
   if (agents.isLoading) {
@@ -93,31 +93,31 @@ export default function AgentsPage() {
               </thead>
               <tbody className="divide-y divide-border text-sm font-medium">
                 {filtered.map((agent) => (
-                  <tr key={agent.ID} className="hover:bg-secondary/20 transition-colors">
+                  <tr key={agent.id} className="hover:bg-secondary/20 transition-colors">
                     <td className="px-4 py-4">
                       <div className="flex flex-col">
-                        <span className="text-foreground">{agent.Name || '—'}</span>
-                        <span className="text-[10px] text-muted-foreground font-mono">{agent.ID}</span>
+                        <span className="text-foreground">{agent.name || '—'}</span>
+                        <span className="text-[10px] text-muted-foreground font-mono">{agent.id}</span>
                       </div>
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex items-center gap-2">
                         <Shield size={14} className="text-blue-500" />
-                        <span className="text-xs">{agent.Role || '—'}</span>
+                        <span className="text-xs">{agent.role || '—'}</span>
                       </div>
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex items-center gap-2">
                         <Cpu size={14} className="text-purple-500" />
                         <span className="text-xs">
-                          {agent.Provider ? `${agent.Provider}${agent.Model ? ` (${agent.Model})` : ''}` : '—'}
+                          {agent.provider ? `${agent.provider}${agent.model ? ` (${agent.model})` : ''}` : '—'}
                         </span>
                       </div>
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex flex-wrap gap-1">
-                        {(agent.Tools || []).length > 0 ? (
-                          agent.Tools.map((cap) => (
+                        {(agent.tools || []).length > 0 ? (
+                          agent.tools!.map((cap) => (
                             <span
                               key={cap}
                               className="px-1.5 py-0.5 bg-secondary text-[10px] rounded border border-border text-muted-foreground"

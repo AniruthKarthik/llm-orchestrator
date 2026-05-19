@@ -34,9 +34,10 @@ type Server struct {
 	eb            *events.EventBus
 	allowedOrigin string // CORS origin, "*" by default
 	apiKey        string // optional — empty means no auth
+	storageMode   string // "memory" or "postgres"
 }
 
-func NewServer(e *executor.Executor, s store.Store, eb *events.EventBus) *Server {
+func NewServer(e *executor.Executor, s store.Store, eb *events.EventBus, storageMode string) *Server {
 	origin := os.Getenv("ALLOWED_ORIGIN")
 	if origin == "" {
 		origin = "*"
@@ -47,6 +48,7 @@ func NewServer(e *executor.Executor, s store.Store, eb *events.EventBus) *Server
 		eb:            eb,
 		allowedOrigin: origin,
 		apiKey:        os.Getenv("API_KEY"),
+		storageMode:   storageMode,
 	}
 }
 
@@ -211,7 +213,10 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 // --- Handlers ---
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":      "ok",
+		"storageMode": s.storageMode,
+	})
 }
 
 func (s *Server) handleGetCompose(w http.ResponseWriter, r *http.Request) {

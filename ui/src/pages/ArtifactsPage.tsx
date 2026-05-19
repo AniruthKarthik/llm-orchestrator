@@ -12,9 +12,9 @@ function ArtifactPreviewModal({ artifact, onClose }: { artifact: Artifact; onClo
       >
         <div className="flex items-center justify-between p-4 border-b border-border">
           <div>
-            <h2 className="font-bold text-foreground">{artifact.Name}</h2>
+            <h2 className="font-bold text-foreground">{artifact.name}</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Workflow: {artifact.WorkflowID} · Task: {artifact.TaskID}
+              Workflow: {artifact.workflowId} · Task: {artifact.taskId}
             </p>
           </div>
           <button
@@ -26,13 +26,13 @@ function ArtifactPreviewModal({ artifact, onClose }: { artifact: Artifact; onClo
         </div>
         <div className="flex-1 overflow-auto p-4">
           <pre className="text-xs font-mono bg-[#0d1117] text-[#e6edf3] p-4 rounded-md overflow-auto whitespace-pre-wrap break-all">
-            {typeof artifact.Data === 'string'
-              ? artifact.Data
-              : JSON.stringify(artifact.Data, null, 2)}
+            {typeof artifact.data === 'string'
+              ? artifact.data
+              : JSON.stringify(artifact.data, null, 2)}
           </pre>
         </div>
         <div className="p-3 border-t border-border text-xs text-muted-foreground">
-          Created: {new Date(artifact.CreatedAt).toLocaleString()} · Type: {artifact.Type}
+          Created: {new Date(artifact.createdAt).toLocaleString()} · Type: {artifact.type}
         </div>
       </div>
     </div>
@@ -50,9 +50,9 @@ export default function ArtifactsPage() {
 
   const filtered = artifacts.data.filter(
     (a) =>
-      a.Name?.toLowerCase().includes(search.toLowerCase()) ||
-      a.WorkflowID?.toLowerCase().includes(search.toLowerCase()) ||
-      a.Type?.toLowerCase().includes(search.toLowerCase())
+      a.name?.toLowerCase().includes(search.toLowerCase()) ||
+      a.workflowId?.toLowerCase().includes(search.toLowerCase()) ||
+      a.type?.toLowerCase().includes(search.toLowerCase())
   );
 
   if (artifacts.isLoading) {
@@ -143,12 +143,12 @@ export default function ArtifactsPage() {
                 ) : (
                   filtered.map((art) => (
                     <div
-                      key={art.ID}
+                      key={art.id}
                       className="p-4 flex items-center justify-between hover:bg-secondary/20 transition-colors group"
                     >
                       <div className="flex items-center gap-4">
                         <div className="w-10 h-10 bg-muted border border-border rounded flex items-center justify-center text-muted-foreground group-hover:bg-primary/10 group-hover:text-primary transition-colors">
-                          {art.Type === 'TEXT' || art.Type === 'JSON' ? (
+                          {art.type === 'TEXT' || art.type === 'JSON' ? (
                             <FileText size={20} />
                           ) : (
                             <Code size={20} />
@@ -156,19 +156,19 @@ export default function ArtifactsPage() {
                         </div>
                         <div>
                           <div className="text-sm font-bold text-foreground flex items-center gap-2">
-                            {art.Name}
+                            {art.name}
                             <span className="text-[10px] bg-secondary px-1 rounded text-muted-foreground uppercase">
-                              {art.Type}
+                              {art.type}
                             </span>
                           </div>
                           <div className="text-xs text-muted-foreground flex items-center gap-3 mt-0.5">
                             <span className="flex items-center gap-1">
                               <Clock size={12} />
-                              {new Date(art.CreatedAt).toLocaleString()}
+                              {new Date(art.createdAt).toLocaleString()}
                             </span>
                             <span>•</span>
                             <span className="font-medium text-foreground/70 font-mono text-[10px]">
-                              {art.WorkflowID}
+                              {art.workflowId}
                             </span>
                           </div>
                         </div>

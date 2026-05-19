@@ -14,6 +14,8 @@ import {
 import { cn } from '@/lib/utils';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { WsContext } from '@/context/WsContext';
+import { useStorageMode } from '@/hooks/useStorageMode';
+import { InMemoryBanner } from '@/components/ui/InMemoryBanner';
 
 interface SidebarItemProps {
   icon: React.ReactNode;
@@ -40,6 +42,7 @@ const SidebarItem = ({ icon, label, to, active }: SidebarItemProps) => (
 export const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
   const { isConnected, events, addListener } = useWebSocket();
+  const storageMode = useStorageMode();
 
   const primaryItems = [
     { icon: <LayoutDashboard size={16} />, label: 'Dashboard', to: '/' },
@@ -152,6 +155,7 @@ export const DashboardLayout = ({ children }: { children: React.ReactNode }) => 
 
         <div className="flex-1 overflow-auto bg-muted/20">
           <WsContext.Provider value={{ isConnected, events, addListener }}>
+            {storageMode === 'memory' && <InMemoryBanner />}
             {children}
           </WsContext.Provider>
         </div>

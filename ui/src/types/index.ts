@@ -40,28 +40,29 @@ export interface Provider {
   models: string[];
 }
 
-// Agent as returned by GET /agents (store.AgentRecord shape)
+// Agent as returned by GET /agents (store.AgentRecord shape — camelCase)
 export interface Agent {
-  ID: string;
-  Name: string;
-  Description: string;
-  Role: string;
-  Model: string;
-  Provider: string;
-  Tools: string[];
-  Config: Record<string, unknown>;
+  id: string;
+  name: string;
+  description: string;
+  role: string;
+  systemPrompt?: string;
+  model: string;
+  provider: string;
+  tools?: string[];
+  config?: Record<string, unknown>;
 }
 
-// Artifact as returned by GET /artifacts (store.ArtifactRecord shape)
+// Artifact as returned by GET /artifacts (store.ArtifactRecord shape — camelCase)
 export interface Artifact {
-  ID: string;
-  WorkflowID: string;
-  TaskID: string;
-  Name: string;
-  Type: string;
-  Data: unknown;
-  Metadata: Record<string, unknown>;
-  CreatedAt: string;
+  id: string;
+  workflowId: string;
+  taskId: string;
+  name: string;
+  type: string;
+  data: unknown;
+  metadata?: Record<string, unknown>;
+  createdAt: string;
 }
 
 export interface Event {
