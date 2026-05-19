@@ -57,7 +57,7 @@ export default function WorkflowBuilderPage() {
   const [isExecuting, setIsExecuting] = useState(false);
   const [workflowName, setWorkflowName] = useState('Untitled Workflow');
   const [workflowDesc, setWorkflowDesc] = useState('');
-  const [activeTab, setActiveTab] = useState<'config' | 'prompt' | 'advanced'>('config');
+  const [activeTab, setActiveTab] = useState<'config' | 'prompt' | 'result' | 'advanced'>('config');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [savedWorkflowId, setSavedWorkflowId] = useState<string | null>(id !== 'new' ? id ?? null : null);
