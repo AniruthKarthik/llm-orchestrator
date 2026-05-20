@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
-import { CheckCircle2, Clock, AlertCircle, PlayCircle, Trash2 } from 'lucide-react';
+import { CheckCircle2, Clock, AlertCircle, PlayCircle, Trash2, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export type TaskNodeData = {
@@ -11,6 +11,7 @@ export type TaskNodeData = {
   model?: string;
   onEdit?: () => void;
   onDelete?: (id: string) => void;
+  onAddChild?: (id: string) => void;
 };
 
 const TaskNode = ({ id, data, selected }: NodeProps<Node<TaskNodeData>>) => {
@@ -36,32 +37,46 @@ const TaskNode = ({ id, data, selected }: NodeProps<Node<TaskNodeData>>) => {
 
   return (
     <div className={cn(
-      "w-[260px] shadow-sm rounded-md bg-card border transition-all flex flex-col overflow-hidden text-left",
-      selected 
-        ? "border-primary ring-1 ring-primary" 
+      "w-[260px] shadow-sm rounded-md bg-card border transition-all flex flex-col overflow-visible text-left",
+      selected
+        ? "border-primary ring-1 ring-primary"
         : "border-border hover:border-muted-foreground/50"
     )}>
       {/* Top Status Bar */}
-      <div className={cn("h-1 w-full", getStatusColor())} />
-      
+      <div className={cn("h-1 w-full rounded-t-md", getStatusColor())} />
+
       <Handle type="target" position={Position.Top} className="w-2.5 h-2.5 bg-muted-foreground border-card -mt-1.5" />
-      
+
       <div className="p-3">
         <div className="flex items-start justify-between mb-1">
           <div className="flex items-center gap-2">
             {getStatusIcon()}
             <span className="font-semibold text-sm text-foreground truncate">{data.label}</span>
           </div>
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              data.onDelete?.(id);
-            }}
-            className="text-muted-foreground hover:text-red-500 transition-colors p-1 rounded-sm hover:bg-red-50"
-            title="Delete task"
-          >
-            <Trash2 size={14} />
-          </button>
+          <div className="flex items-center gap-0.5">
+            {data.onAddChild && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  data.onAddChild?.(id);
+                }}
+                className="text-muted-foreground hover:text-primary transition-colors p-1 rounded-sm hover:bg-primary/10"
+                title="Add connected child task"
+              >
+                <Plus size={13} />
+              </button>
+            )}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                data.onDelete?.(id);
+              }}
+              className="text-muted-foreground hover:text-red-500 transition-colors p-1 rounded-sm hover:bg-red-50"
+              title="Delete task"
+            >
+              <Trash2 size={13} />
+            </button>
+          </div>
         </div>
 
         {data.description && (
@@ -88,9 +103,13 @@ const TaskNode = ({ id, data, selected }: NodeProps<Node<TaskNodeData>>) => {
         </div>
       </div>
 
-      <Handle type="source" position={Position.Bottom} className="w-2.5 h-2.5 bg-muted-foreground border-card -mb-1.5" />
+      {/* Bottom handle + Add child button overlay */}
+      <div className="relative flex justify-center pb-1">
+        <Handle type="source" position={Position.Bottom} className="w-2.5 h-2.5 bg-muted-foreground border-card" />
+      </div>
     </div>
   );
 };
 
 export default memo(TaskNode);
+

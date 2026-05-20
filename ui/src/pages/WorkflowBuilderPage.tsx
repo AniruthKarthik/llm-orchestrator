@@ -125,6 +125,7 @@ function WorkflowBuilderPageInner() {
           timeoutMs: task.timeout ? Math.max(1000, Math.round(Number(task.timeout) / 1_000_000)) : 30000,
           requiresApproval: Boolean(task.requiresApproval),
           onDelete: deleteTask,
+          onAddChild: (parentId: string) => addChildNode(parentId),
         },
       }));
 
@@ -259,50 +260,142 @@ function WorkflowBuilderPageInner() {
 
   const { getViewport, screenToFlowPosition } = useReactFlow();
 
-  const addNode = () => {
-    // Compute a position that is always visible in the current viewport.
-    // We project the canvas centre of the visible area into flow coordinates,
-    // then nudge right+down so the node doesn't land dead-centre.
-    let spawnX = 250;
-    let spawnY = 100;
+  /** Returns true when a candidate {x,y} position for a 260×120 node
+   *  does not overlap any existing node (with 20px padding). */
+  const isFreeSpace = useCallback(
+    (cx: number, cy: number, currentNodes: Node[]) => {
+      const W = 280, H = 140; // node width + padding
+      return currentNodes.every((n) => {
+        const dx = Math.abs(n.position.x - cx);
+        const dy = Math.abs(n.position.y - cy);
+        return dx > W || dy > H;
+      });
+    },
+    []
+  );
 
-    if (nodes.length > 0) {
-      // Place the new node below+right of the bottom-most existing node.
-      const maxY = Math.max(...nodes.map((n) => n.position.y));
-      const lastNode = nodes.find((n) => n.position.y === maxY) ?? nodes[nodes.length - 1];
-      spawnX = lastNode.position.x + 30;
-      spawnY = lastNode.position.y + 180;
-    } else {
-      // No existing nodes: project screen centre into flow coordinates.
+  /** Find the best spawn position that is:
+   *  1. Inside the current visible viewport (flow-coordinates)
+   *  2. Not overlapping existing nodes
+   *  Searches a grid across the visible area; falls back to below last node. */
+  const findSpawnPosition = useCallback(
+    (currentNodes: Node[]): { x: number; y: number } => {
       const vp = getViewport();
       const canvasEl = document.querySelector('.react-flow__renderer') as HTMLElement | null;
-      const w = canvasEl?.clientWidth ?? 800;
+      const w = canvasEl?.clientWidth ?? 900;
       const h = canvasEl?.clientHeight ?? 600;
-      const centreFlow = screenToFlowPosition({ x: w / 2, y: h / 2 });
-      spawnX = centreFlow.x - 75;
-      spawnY = centreFlow.y - 40;
-      // suppress unused-var warning
-      void vp;
-    }
 
-    const newNode: Node = {
-      id: `task-${Date.now()}`,
-      type: 'task',
-      position: { x: spawnX, y: spawnY },
-      data: {
-        label: 'New Task',
-        status: 'PENDING',
-        config: {},
-        provider: '',
-        model: '',
-        systemPrompt: '',
-        maxRetries: 3,
-        timeoutMs: 30000,
-        requiresApproval: false,
-        onDelete: deleteTask,
-      },
-    };
-    setNodes((nds) => nds.concat(newNode));
+      // Visible flow-space bounds
+      const left   = (-vp.x) / vp.zoom;
+      const top    = (-vp.y) / vp.zoom;
+      const right  = left + w / vp.zoom;
+      const bottom = top  + h / vp.zoom;
+
+      const STEP_X = 290;
+      const STEP_Y = 150;
+      const PAD    = 30;
+
+      // Search the visible grid for a free cell (top-to-bottom, left-to-right)
+      for (let cy = top + PAD; cy < bottom - PAD; cy += STEP_Y) {
+        for (let cx = left + PAD; cx < right - PAD; cx += STEP_X) {
+          if (isFreeSpace(cx, cy, currentNodes)) {
+            return { x: cx, y: cy };
+          }
+        }
+      }
+
+      // Fallback: place below+right of the bottom-most existing node
+      if (currentNodes.length > 0) {
+        const maxY = Math.max(...currentNodes.map((n) => n.position.y));
+        const last = currentNodes.find((n) => n.position.y === maxY) ?? currentNodes[currentNodes.length - 1];
+        return { x: last.position.x, y: last.position.y + 180 };
+      }
+
+      // Empty canvas: centre of viewport
+      const centreFlow = screenToFlowPosition({ x: w / 2, y: h / 2 });
+      return { x: centreFlow.x - 130, y: centreFlow.y - 60 };
+    },
+    [getViewport, screenToFlowPosition, isFreeSpace]
+  );
+
+  const makeNodeData = useCallback(
+    (overrides: Partial<Record<string, unknown>> = {}) => ({
+      label: 'New Task',
+      status: 'PENDING',
+      config: {},
+      provider: '',
+      model: '',
+      systemPrompt: '',
+      maxRetries: 3,
+      timeoutMs: 30000,
+      requiresApproval: false,
+      onDelete: deleteTask,
+      onAddChild: (parentId: string) => addChildNode(parentId),
+      ...overrides,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [deleteTask]
+  );
+
+  // Forward-declare so makeNodeData can reference it
+  // eslint-disable-next-line prefer-const
+  let addChildNode: (parentId: string) => void;
+
+  const addNode = () => {
+    setNodes((nds) => {
+      const pos = findSpawnPosition(nds);
+      const newNode: Node = {
+        id: `task-${Date.now()}`,
+        type: 'task',
+        position: pos,
+        data: makeNodeData(),
+      };
+      return nds.concat(newNode);
+    });
+  };
+
+  addChildNode = (parentId: string) => {
+    setNodes((nds) => {
+      const parent = nds.find((n) => n.id === parentId);
+      // Default: 180px below parent, same X
+      const baseX = parent ? parent.position.x : 250;
+      const baseY = parent ? parent.position.y + 180 : 300;
+
+      // Shift right until there's free space
+      let cx = baseX;
+      let cy = baseY;
+      const STEP = 290;
+      for (let attempt = 0; attempt < 8; attempt++) {
+        if (isFreeSpace(cx, cy, nds)) break;
+        cx += STEP;
+      }
+
+      const childId = `task-${Date.now()}`;
+      const newNode: Node = {
+        id: childId,
+        type: 'task',
+        position: { x: cx, y: cy },
+        data: makeNodeData(),
+      };
+
+      // Create the edge
+      setEdges((eds) =>
+        addEdge(
+          {
+            id: `e-${parentId}-${childId}`,
+            source: parentId,
+            target: childId,
+            type: 'smoothstep',
+            animated: true,
+            markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--color-primary)' },
+            style: { stroke: 'var(--color-primary)', strokeWidth: 2 },
+          },
+          eds
+        )
+      );
+
+      return nds.concat(newNode);
+    });
   };
 
   const onNodeClick = async (_: React.MouseEvent, node: Node) => {
