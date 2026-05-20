@@ -9,6 +9,7 @@ import {
   useEdgesState,
   useReactFlow,
   ReactFlowProvider,
+  ConnectionMode,
   addEdge,
   MarkerType,
   BackgroundVariant,
@@ -601,6 +602,7 @@ function WorkflowBuilderPageInner() {
             fitViewOptions={{ padding: 0.2 }}
             minZoom={0.2}
             maxZoom={1.5}
+            connectionMode={ConnectionMode.Loose}
             connectionLineStyle={{ stroke: 'var(--color-primary)', strokeWidth: 2 }}
             className="[&_.react-flow__controls-button]:bg-card [&_.react-flow__controls-button]:border-border [&_.react-flow__controls-button]:fill-foreground"
           >
