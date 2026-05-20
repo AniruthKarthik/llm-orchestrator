@@ -90,7 +90,10 @@ function TokenUsagePanel() {
   const usage = useTokenUsage();
   const [expanded, setExpanded] = useState(false);
 
-  if (!usage || usage.totalTokens === 0) return null;
+  const total = usage?.totalTokens ?? 0;
+  const prompt = usage?.totalPromptTokens ?? 0;
+  const completion = usage?.totalCompletionTokens ?? 0;
+  const byModel = usage?.byModel ?? [];
 
   return (
     <div className="rounded-md border border-border bg-muted/30 overflow-hidden text-xs">
@@ -100,36 +103,42 @@ function TokenUsagePanel() {
       >
         <div className="flex items-center gap-1.5 text-muted-foreground font-medium">
           <Coins size={12} className="text-amber-500" />
-          <span>Tokens used</span>
+          <span>Token Usage</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="font-bold text-foreground">{fmt(usage.totalTokens)}</span>
+          <span className="font-bold text-foreground">{total === 0 ? '–' : fmt(total)}</span>
           {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
         </div>
       </button>
 
       {expanded && (
         <div className="border-t border-border px-2.5 py-2 space-y-2">
-          <div className="flex justify-between text-muted-foreground">
-            <span>Prompt</span>
-            <span className="font-medium text-foreground">{fmt(usage.totalPromptTokens)}</span>
-          </div>
-          <div className="flex justify-between text-muted-foreground">
-            <span>Completion</span>
-            <span className="font-medium text-foreground">{fmt(usage.totalCompletionTokens)}</span>
-          </div>
-          {usage.byModel && usage.byModel.length > 0 && (
-            <div className="pt-1 border-t border-border/50 space-y-1">
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">By model</p>
-              {usage.byModel.map((m) => (
-                <div key={m.model} className="flex justify-between items-center gap-1">
-                  <span className="truncate text-muted-foreground max-w-[120px]" title={m.model}>
-                    {m.model}
-                  </span>
-                  <span className="font-medium text-foreground shrink-0">{fmt(m.totalTokens)}</span>
+          {total === 0 ? (
+            <p className="text-muted-foreground/60 italic">No tokens used yet this session.</p>
+          ) : (
+            <>
+              <div className="flex justify-between text-muted-foreground">
+                <span>Prompt</span>
+                <span className="font-medium text-foreground">{fmt(prompt)}</span>
+              </div>
+              <div className="flex justify-between text-muted-foreground">
+                <span>Completion</span>
+                <span className="font-medium text-foreground">{fmt(completion)}</span>
+              </div>
+              {byModel.length > 0 && (
+                <div className="pt-1 border-t border-border/50 space-y-1">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">By model</p>
+                  {byModel.map((m) => (
+                    <div key={m.model} className="flex justify-between items-center gap-1">
+                      <span className="truncate text-muted-foreground max-w-[120px]" title={m.model}>
+                        {m.model}
+                      </span>
+                      <span className="font-medium text-foreground shrink-0">{fmt(m.totalTokens)}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           )}
           <p className="text-[10px] text-muted-foreground/60 pt-0.5">Session only · resets on restart</p>
         </div>
