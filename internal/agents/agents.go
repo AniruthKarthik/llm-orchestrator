@@ -119,6 +119,31 @@ func (e *AgentExecutor) Execute(ctx context.Context, agentID string, task *core.
 			systemPrompt.WriteString("\n\n")
 		}
 
+		// 1b. Inject direct dependency outputs from task.Input["dep_outputs"]
+		// This is the primary, authoritative source of upstream task results.
+		if depOutputs, ok := task.Input["dep_outputs"].(map[string]any); ok && len(depOutputs) > 0 {
+			systemPrompt.WriteString("## Outputs from upstream tasks you depend on\n")
+			systemPrompt.WriteString("The following are the COMPLETE outputs of the tasks that ran before you. ")
+			systemPrompt.WriteString("Use them as the primary context and input for your work.\n\n")
+			for depLabel, depOut := range depOutputs {
+				// Skip numeric taskID duplicates if we have the named version
+				// (we store both depID and depName so skip raw IDs when name exists)
+				outJSON, _ := json.MarshalIndent(depOut, "  ", "  ")
+				// Extract just the "response" or "output" field if available for cleaner context
+				if outMap, ok := depOut.(map[string]any); ok {
+					if resp, ok := outMap["response"].(string); ok && resp != "" {
+						systemPrompt.WriteString(fmt.Sprintf("### Task: %s\n%s\n\n", depLabel, resp))
+						continue
+					}
+					if out, ok := outMap["output"].(string); ok && out != "" {
+						systemPrompt.WriteString(fmt.Sprintf("### Task: %s\n%s\n\n", depLabel, out))
+						continue
+					}
+				}
+				systemPrompt.WriteString(fmt.Sprintf("### Task: %s\n```json\n%s\n```\n\n", depLabel, string(outJSON)))
+			}
+		}
+
 		// 2. Retrieval Injection: Inject relevant artifacts
 		if e.artifactRegistry != nil {
 			artifacts := e.artifactRegistry.ListByWorkflow(task.WorkflowID)

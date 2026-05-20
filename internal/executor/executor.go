@@ -347,6 +347,33 @@ func (e *Executor) executeTask(
 	}
 	defer e.concurrencyLimiter.Release()
 
+	// Inject outputs from all dependency tasks into this task's Input.
+	// This gives the downstream agent structured access to upstream results
+	// under the key "dep_outputs" (a map of taskID -> output) as well as
+	// individual keys "dep_<taskID>_<field>" for flat access.
+	if len(task.Dependencies) > 0 {
+		if task.Input == nil {
+			task.Input = make(map[string]any)
+		}
+		depOutputs := make(map[string]any, len(task.Dependencies))
+		for _, depID := range task.Dependencies {
+			depTask, err := workflow.GetTask(depID)
+			if err != nil {
+				continue
+			}
+			depOut := depTask.GetOutput()
+			if len(depOut) == 0 {
+				continue
+			}
+			depOutputs[depID] = depOut
+			// Also inject a human-readable label using task name if available
+			depOutputs[depTask.Name] = depOut
+		}
+		if len(depOutputs) > 0 {
+			task.Input["dep_outputs"] = depOutputs
+		}
+	}
+
 	var handler TaskHandler
 
 	agentIDs := []string{}
