@@ -7,6 +7,8 @@ import {
   Panel,
   useNodesState,
   useEdgesState,
+  useReactFlow,
+  ReactFlowProvider,
   addEdge,
   MarkerType,
   BackgroundVariant,
@@ -45,6 +47,14 @@ interface ExecutionPlan {
 }
 
 export default function WorkflowBuilderPage() {
+  return (
+    <ReactFlowProvider>
+      <WorkflowBuilderPageInner />
+    </ReactFlowProvider>
+  );
+}
+
+function WorkflowBuilderPageInner() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { providers, fetchProviders, executeWorkflow } = useWorkflowStore();
@@ -247,11 +257,38 @@ export default function WorkflowBuilderPage() {
     );
   }, [setEdges]);
 
+  const { getViewport, screenToFlowPosition } = useReactFlow();
+
   const addNode = () => {
+    // Compute a position that is always visible in the current viewport.
+    // We project the canvas centre of the visible area into flow coordinates,
+    // then nudge right+down so the node doesn't land dead-centre.
+    let spawnX = 250;
+    let spawnY = 100;
+
+    if (nodes.length > 0) {
+      // Place the new node below+right of the bottom-most existing node.
+      const maxY = Math.max(...nodes.map((n) => n.position.y));
+      const lastNode = nodes.find((n) => n.position.y === maxY) ?? nodes[nodes.length - 1];
+      spawnX = lastNode.position.x + 30;
+      spawnY = lastNode.position.y + 180;
+    } else {
+      // No existing nodes: project screen centre into flow coordinates.
+      const vp = getViewport();
+      const canvasEl = document.querySelector('.react-flow__renderer') as HTMLElement | null;
+      const w = canvasEl?.clientWidth ?? 800;
+      const h = canvasEl?.clientHeight ?? 600;
+      const centreFlow = screenToFlowPosition({ x: w / 2, y: h / 2 });
+      spawnX = centreFlow.x - 75;
+      spawnY = centreFlow.y - 40;
+      // suppress unused-var warning
+      void vp;
+    }
+
     const newNode: Node = {
       id: `task-${Date.now()}`,
       type: 'task',
-      position: { x: 250, y: nodes.length * 150 + 100 },
+      position: { x: spawnX, y: spawnY },
       data: {
         label: 'New Task',
         status: 'PENDING',
