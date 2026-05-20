@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -12,6 +12,9 @@ import {
   ListTodo,
   Sun,
   Moon,
+  Coins,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useWebSocket } from '@/hooks/useWebSocket';
@@ -20,6 +23,7 @@ import { useStorageMode } from '@/hooks/useStorageMode';
 import { useTheme } from '@/hooks/useTheme';
 import { InMemoryBanner } from '@/components/ui/InMemoryBanner';
 import { toast } from '@/store/useToastStore';
+import api from '@/api/client';
 
 interface SidebarItemProps {
   icon: React.ReactNode;
@@ -42,6 +46,97 @@ const SidebarItem = ({ icon, label, to, active }: SidebarItemProps) => (
     <span>{label}</span>
   </Link>
 );
+
+interface ModelTokenStats {
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+interface TokenUsage {
+  totalPromptTokens: number;
+  totalCompletionTokens: number;
+  totalTokens: number;
+  byModel: ModelTokenStats[];
+}
+
+function useTokenUsage() {
+  const [usage, setUsage] = useState<TokenUsage | null>(null);
+
+  useEffect(() => {
+    const fetch = async () => {
+      try {
+        const res = await api.get('/metrics');
+        const data = res.data as { tokenUsage?: TokenUsage };
+        if (data.tokenUsage) setUsage(data.tokenUsage);
+      } catch { /* silent */ }
+    };
+    fetch();
+    const id = setInterval(fetch, 10_000);
+    return () => clearInterval(id);
+  }, []);
+
+  return usage;
+}
+
+function fmt(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+function TokenUsagePanel() {
+  const usage = useTokenUsage();
+  const [expanded, setExpanded] = useState(false);
+
+  if (!usage || usage.totalTokens === 0) return null;
+
+  return (
+    <div className="rounded-md border border-border bg-muted/30 overflow-hidden text-xs">
+      <button
+        onClick={() => setExpanded((e) => !e)}
+        className="w-full flex items-center justify-between px-2.5 py-2 hover:bg-muted/50 transition-colors"
+      >
+        <div className="flex items-center gap-1.5 text-muted-foreground font-medium">
+          <Coins size={12} className="text-amber-500" />
+          <span>Tokens used</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="font-bold text-foreground">{fmt(usage.totalTokens)}</span>
+          {expanded ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="border-t border-border px-2.5 py-2 space-y-2">
+          <div className="flex justify-between text-muted-foreground">
+            <span>Prompt</span>
+            <span className="font-medium text-foreground">{fmt(usage.totalPromptTokens)}</span>
+          </div>
+          <div className="flex justify-between text-muted-foreground">
+            <span>Completion</span>
+            <span className="font-medium text-foreground">{fmt(usage.totalCompletionTokens)}</span>
+          </div>
+          {usage.byModel && usage.byModel.length > 0 && (
+            <div className="pt-1 border-t border-border/50 space-y-1">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">By model</p>
+              {usage.byModel.map((m) => (
+                <div key={m.model} className="flex justify-between items-center gap-1">
+                  <span className="truncate text-muted-foreground max-w-[120px]" title={m.model}>
+                    {m.model}
+                  </span>
+                  <span className="font-medium text-foreground shrink-0">{fmt(m.totalTokens)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <p className="text-[10px] text-muted-foreground/60 pt-0.5">Session only · resets on restart</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export const DashboardLayout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
@@ -130,7 +225,10 @@ export const DashboardLayout = ({ children }: { children: React.ReactNode }) => 
           </div>
         </div>
 
-        <div className="p-3 border-t border-border mt-auto">
+        <div className="p-3 border-t border-border mt-auto space-y-2">
+          {/* Token usage panel */}
+          <TokenUsagePanel />
+
           <div
             className={cn(
               'flex items-center gap-2 px-2 py-1.5 rounded border text-xs font-medium',
@@ -200,3 +298,4 @@ export const DashboardLayout = ({ children }: { children: React.ReactNode }) => 
     </div>
   );
 };
+

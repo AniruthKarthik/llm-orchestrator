@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/AniruthKarthik/llm-orchestrator/internal/agents"
@@ -28,6 +29,14 @@ var upgrader = websocket.Upgrader{
 
 const maxBodyBytes = 1 << 20 // 1 MiB — reject larger request bodies
 
+// tokenModelStats tracks cumulative token usage per model for this server session.
+type tokenModelStats struct {
+	Model            string `json:"model"`
+	PromptTokens     int    `json:"promptTokens"`
+	CompletionTokens int    `json:"completionTokens"`
+	TotalTokens      int    `json:"totalTokens"`
+}
+
 type Server struct {
 	executor      *executor.Executor
 	store         store.Store
@@ -35,6 +44,9 @@ type Server struct {
 	allowedOrigin string // CORS origin, "*" by default
 	apiKey        string // optional — empty means no auth
 	storageMode   string // "memory" or "postgres"
+
+	tokenMu    sync.RWMutex
+	tokenStats map[string]*tokenModelStats // keyed by model name
 }
 
 func NewServer(e *executor.Executor, s store.Store, eb *events.EventBus, storageMode string) *Server {
@@ -42,14 +54,46 @@ func NewServer(e *executor.Executor, s store.Store, eb *events.EventBus, storage
 	if origin == "" {
 		origin = "*"
 	}
-	return &Server{
+	srv := &Server{
 		executor:      e,
 		store:         s,
 		eb:            eb,
 		allowedOrigin: origin,
 		apiKey:        os.Getenv("API_KEY"),
 		storageMode:   storageMode,
+		tokenStats:    make(map[string]*tokenModelStats),
 	}
+
+	// Subscribe to token usage events to accumulate running totals.
+	srv.eb.Subscribe(events.TaskTokenUsage, func(ev events.Event) {
+		model, _ := ev.Payload["model"].(string)
+		if model == "" {
+			model = "unknown"
+		}
+		toInt := func(v any) int {
+			switch n := v.(type) {
+			case int:
+				return n
+			case float64:
+				return int(n)
+			}
+			return 0
+		}
+		prompt := toInt(ev.Payload["prompt_tokens"])
+		completion := toInt(ev.Payload["completion_tokens"])
+		total := toInt(ev.Payload["total_tokens"])
+
+		srv.tokenMu.Lock()
+		defer srv.tokenMu.Unlock()
+		if _, ok := srv.tokenStats[model]; !ok {
+			srv.tokenStats[model] = &tokenModelStats{Model: model}
+		}
+		srv.tokenStats[model].PromptTokens += prompt
+		srv.tokenStats[model].CompletionTokens += completion
+		srv.tokenStats[model].TotalTokens += total
+	})
+
+	return srv
 }
 
 func (s *Server) Routes() http.Handler {
@@ -959,6 +1003,18 @@ func (s *Server) handleGetMetrics(w http.ResponseWriter, r *http.Request) {
 
 	providerList := providers.List(r.Context())
 
+	// Collect per-model token stats
+	s.tokenMu.RLock()
+	tokenList := make([]*tokenModelStats, 0, len(s.tokenStats))
+	var totalPrompt, totalCompletion, totalTokens int
+	for _, v := range s.tokenStats {
+		tokenList = append(tokenList, v)
+		totalPrompt += v.PromptTokens
+		totalCompletion += v.CompletionTokens
+		totalTokens += v.TotalTokens
+	}
+	s.tokenMu.RUnlock()
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"activeWorkflows":    active,
 		"completedWorkflows": completed,
@@ -968,5 +1024,11 @@ func (s *Server) handleGetMetrics(w http.ResponseWriter, r *http.Request) {
 		"tasksInQueue":       queueDepth,
 		"providersOnline":    len(providerList),
 		"providers":          providerList,
+		"tokenUsage": map[string]any{
+			"totalPromptTokens":     totalPrompt,
+			"totalCompletionTokens": totalCompletion,
+			"totalTokens":           totalTokens,
+			"byModel":               tokenList,
+		},
 	})
 }
