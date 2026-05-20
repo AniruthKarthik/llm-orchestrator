@@ -1,120 +1,179 @@
-# LLM Orchestrator: Technical Architecture Deep Dive
+# LLM Orchestrator: Comprehensive Technical Architecture
 
-## 1. System Philosophy
-LLM Orchestrator is built as a **modular, local-first execution engine**. It treats AI workflows as Directed Acyclic Graphs (DAGs) where each node is a discrete unit of work (Task) and each edge is a dependency. 
-
-The core design goals are:
-- **Deterministic Scheduling:** Parallel execution whenever possible, serial when necessary.
-- **State Reliability:** Persistence-first approach to allow recovery from any point of failure.
-- **Contextual Intelligence:** Ensuring agents have structured, relevant data from upstream tasks.
+LLM Orchestrator is a robust, modular, and local-first execution engine designed to manage complex AI workflows. It represents workflows as Directed Acyclic Graphs (DAGs), where each node is a discrete unit of work (Task) and edges represent dependencies.
 
 ---
 
-## 2. Domain Model & Core Primitives
+## 1. Core Philosophy & Design Principles
 
-### 2.1 Workflow (`internal/core/workflow.go`)
-A `Workflow` is the top-level container. It maintains:
-- **Registry of Tasks:** A thread-safe map (`map[string]*Task`) protected by an `RWMutex`.
-- **Status Lifecycle:** `PENDING` -> `RUNNING` -> (`COMPLETED` | `FAILED`).
-- **Failure Policy:** Determines if the entire workflow halts (`FailFast`) or continues (`ContinueOnFailure`) when a task fails.
-
-### 2.2 Task (`internal/core/task.go`)
-The fundamental unit of execution. Key attributes include:
-- **Input/Output:** Raw data maps (`map[string]any`) that are deep-copied during transitions to prevent race conditions.
-- **Dependencies:** A list of Task IDs that must reach `COMPLETED` before this task can start.
-- **Output Schema:** A type-validation map (e.g., `{"count": "int"}`) used by middleware to verify LLM responses.
-- **Retry Policy:** Configurable `MaxRetries` and backoff strategies (e.g., `Immediate`).
-
-### 2.3 Artifact (`internal/core/artifact.go`)
-Long-lived data produced by tasks. Artifacts are automatically registered upon task completion and serve as the primary source for context injection in downstream tasks.
+The system is built on three pillars:
+- **Resilience:** Built-in retries, panic recovery, and state persistence ensure that workflows can recover from failures at any stage.
+- **Modularity:** A plugin-based architecture and a clean separation of concerns allow for easy extension of providers, agents, and execution logic.
+- **Transparency:** Comprehensive observability through an asynchronous event bus, real-time WebSocket updates, and structured audit logging.
 
 ---
 
-## 3. DAG Engine & Planning (`internal/dag/`)
+## 2. Domain Model & Primitives (`internal/core/`)
 
-The Orchestrator doesn't just "run" tasks; it compiles them into an **Execution Plan**.
+### 2.1 Workflow
+A `Workflow` is the top-level container for a set of tasks.
+- **State Machine:** Transitions from `PENDING` -> `RUNNING` -> `COMPLETED` or `FAILED`.
+- **Failure Policies:**
+    - `FailFast`: Immediately halts the workflow if any task fails.
+    - `ContinueOnFailure`: Continues executing independent tasks even if some fail.
+- **Thread Safety:** Uses `sync.RWMutex` to protect access to task maps and status fields.
 
-1.  **Validation:** The `Validator` checks for cycles (using DFS), missing dependencies, and duplicate IDs.
-2.  **Topological Sort:** The `TopologicalPlanner` uses Kahn's algorithm:
-    - **Indegree Map:** Counts how many dependencies each task has.
-    - **Adjacency List:** Maps each task to the tasks that depend on it.
-    - **Stage Generation:** Tasks with 0 indegree are grouped into `Stage 0`. They are marked as processed, and their neighbors' indegrees are decremented. Tasks that hit 0 indegree in the next iteration form `Stage 1`, and so on.
+### 2.2 Task
+The fundamental unit of execution.
+- **Input/Output:** Raw data maps (`map[string]any`) that are deep-copied to ensure data integrity during parallel execution.
+- **Status Lifecycle:** `PENDING`, `RUNNING`, `COMPLETED`, `FAILED`, and `WAITING_FOR_APPROVAL`.
+- **Output Validation:** Supports an `OutputSchema` (e.g., `{"summary": "string", "count": "int"}`) which is enforced after execution to ensure LLM outputs meet structural requirements.
+- **Human-in-the-Loop:** Tasks can be flagged with `RequiresApproval`, causing them to pause and wait for external signal (via REST API) before continuing.
+
+### 2.3 Artifacts
+Artifacts are versioned, immutable records of data produced by tasks.
+- **Automated Registration:** The executor automatically captures task outputs as artifacts.
+- **Context Injection:** Downstream tasks can reference artifacts by name or ID, which are then injected into the agent's context.
+
+### 2.4 Tools & Memory
+- **Tools:** Discrete functions or external APIs that agents can call during execution.
+- **Memory:** Short-term and long-term storage for agents, allowing for stateful conversations across workflow runs.
 
 ---
 
-## 4. The Execution Engine (`internal/executor/`)
+## 3. DAG Engine & Execution Planning (`internal/dag/`)
 
-### 4.1 Executor Workflow
-The `Executor` processes the `ExecutionPlan` stage-by-stage. Within a stage, tasks are executed concurrently using a `sync.WaitGroup`.
+The Orchestrator uses a multi-step process to transform a declarative workflow into an execution plan.
+
+### 3.1 Validation
+The `Validator` ensures the graph is logically sound:
+- **Reference Check:** Ensures all task dependencies exist within the workflow.
+- **Cycle Detection:** Uses a Depth-First Search (DFS) with a recursion stack to detect circular dependencies, preventing infinite loops.
+- **Self-Dependency Check:** Prevents tasks from depending on themselves.
+
+### 3.2 Topological Planning
+The `TopologicalPlanner` uses Kahn's algorithm to organize tasks into execution stages:
+1.  **Indegree Calculation:** Counts the number of incoming dependencies for each task.
+2.  **Stage Generation:** Tasks with an indegree of 0 are grouped into the current stage.
+3.  **Iteration:** For each task in the current stage, the indegree of its neighbors is decremented. Tasks that hit an indegree of 0 are added to the next stage.
+4.  **Parallelism:** All tasks within a single stage can be executed concurrently.
+
+---
+
+## 4. Execution Engine (`internal/executor/`)
+
+The `Executor` is the heart of the system, responsible for orchestrating the lifecycle of a workflow.
+
+### 4.1 Orchestration Loop
+1.  **Preparation:** Saves the initial workflow and task states to the `Store`.
+2.  **Planning:** Invokes the DAG engine to generate an `ExecutionPlan`.
+3.  **Stage-by-Stage Execution:**
+    - Tasks within a stage are spawned in separate goroutines.
+    - A `sync.WaitGroup` manages synchronization for the stage.
+    - A concurrency-limited worker pool (semaphore-based) prevents system exhaustion.
+4.  **Checkpointing:** After each stage, the system serializes the entire workflow state and saves a `Checkpoint`. This allows for `Resume()` functionality after a crash or manual pause.
 
 ### 4.2 Middleware Pipeline
-Task execution is wrapped in a middleware chain (`ApplyTaskMiddleware`):
-- **Output Validation:** Intercepts the result and matches it against the `OutputSchema`.
-- **Interceptors:** Hooks for observers to record metrics or logs before/after execution.
+Execution logic is wrapped in two layers of middleware:
+- **Workflow Middleware:** Wraps the entire workflow execution (e.g., logging, global timeouts).
+- **Task Middleware:** Wraps individual task execution (e.g., retries, output validation, metric collection).
 
-### 4.3 Resource Management
-- **Concurrency Limiter:** A semaphore-based (`chan struct{}`) limiter ensures the system doesn't overwhelm the host machine or LLM rate limits.
-- **Token Bucket Limiter:** Implements rate-limiting for outgoing provider requests to handle model-specific quotas.
-
----
-
-## 5. Intelligence & Context Engineering
-
-### 5.1 Dynamic Routing (`internal/executor/router.go`)
-Routers decide which agent handles a task if one isn't explicitly assigned:
-- **CapabilityAwareRouter:** Analyzes agent roles (Researcher, Executor, etc.) against task metadata.
-- **CostAwareRouter:** Uses a `ModelCostRegistry` to select the most economical model for the requested role.
-
-### 5.2 Context Injection Engine (`internal/agents/agents.go`)
-Before an agent receives a task, the `AgentExecutor` performs two critical data-passing steps:
-1.  **JSON Artifact Injection:** All artifacts from the same `WorkflowID` are fetched. Their data is serialized to structured JSON and injected into the System Prompt. This allows the LLM to "see" the history of the workflow.
-2.  **Template Interpolation:** The user prompt is scanned for placeholders like `{{TaskName.field}}`. These are replaced with actual values from upstream task outputs before the request is sent to the LLM.
-
-### 5.3 Context Stitching (`internal/agents/stitching.go`)
-To prevent "Context Window Overflow," the `ContextStitcher` monitors the character count of injected data. It intelligently truncates or omits older/less relevant artifacts while preserving the workflow's structural context.
+### 4.3 Routing
+If a task isn't assigned a specific agent, the `Router` dynamically selects one:
+- **Capability-Aware Routing:** Matches task requirements against agent roles and descriptions.
+- **Cost-Aware Routing:** Selects models based on a predefined cost registry to minimize token expenditure.
 
 ---
 
-## 6. Persistence & State Management (`internal/store/`)
+## 5. Intelligence & Agents (`internal/agents/`)
 
-The system implements a **Repository Pattern** to abstract the storage engine.
+### 5.1 Agent Registry
+A central repository of agent definitions, including their roles, system prompts, and tool access permissions.
 
-- **Record Mapping:** Domain objects (like `core.Task`) are converted to `store.TaskRecord` (plain structs with JSON tags) before being saved.
-- **Postgres Store:** Uses `database/sql` for ACID-compliant persistence. Every state change (Task Start, Task Complete, Workflow Fail) is an atomic update to the DB.
-- **Checkpointing:** At the end of every `ExecutionStage`, a full snapshot of the workflow state is serialized and saved as a Checkpoint. This allows the engine to `Resume()` a workflow even after a full system restart.
-
----
-
-## 7. Observability & Communication
-
-### 7.1 Internal Event Bus (`internal/events/`)
-A central pub/sub system (`EventBus`) allows internal components to stay decoupled.
-- **Publishers:** The Executor publishes events like `TaskStarted`, `TaskTokenUsage`, `WorkflowCompleted`.
-- **Subscribers:** The Audit Logger (for file persistence), the Metrics Collector (for Prometheus), and the API Server (for real-time UI updates).
-
-### 7.2 Real-time UI Sync
-The API Server maintains a WebSocket (`/api/v1/ws`) that subscribes to the `EventBus`. When an event occurs in the Go backend, it is immediately pushed as JSON to the React frontend, allowing the Workflow Builder to show live node status changes without polling.
+### 5.2 Context Engineering
+Before an LLM call, the `AgentExecutor` constructs the final prompt:
+- **Artifact Injection:** Serializes relevant artifacts into structured JSON and prepends them to the system prompt.
+- **Template Interpolation:** Uses regex-based interpolation to replace `{{TaskName.field}}` placeholders with actual values from upstream task outputs.
+- **Context Stitching:** The `ContextStitcher` ensures the combined prompt fits within the model's context window. It uses token-counting logic to intelligently truncate or omit less relevant data while maintaining the "thread" of the workflow.
 
 ---
 
-## 8. Directory Architecture Summary
+## 6. Provider Abstraction (`internal/providers/`)
+
+The system implements a unified interface for multiple LLM providers (Groq, OpenAI, Gemini, Anthropic).
+
+- **Unified Request/Response:** All provider-specific details are mapped to a common `GenerateRequest` and `GenerateResponse` structure.
+- **Mappers:** Each provider has a specialized mapper to translate system/user prompts and tool definitions into the provider's specific API format.
+- **Registry:** A thread-safe registry allows for dynamic lookup and instantiation of providers based on model names.
+
+---
+
+## 7. Persistence & State (`internal/store/`)
+
+The system follows the **Repository Pattern** to decouple domain logic from storage implementations.
+
+- **Storage Interfaces:** Defines `Store`, `WorkflowStore`, `TaskStore`, and `ArtifactStore`.
+- **Implementations:**
+    - **Memory Store:** Uses thread-safe maps for local development and testing.
+    - **Postgres Store:** Uses `sqlx` for production-grade persistence, supporting ACID transactions and complex queries.
+- **Object Mapping:** Domain objects are converted to "Record" structs (e.g., `TaskRecord`) before being persisted to ensure database schema changes don't leak into core logic.
+
+---
+
+## 8. Async Event Bus (`internal/events/`)
+
+A high-performance, asynchronous pub/sub system facilitates decoupling between components.
+
+- **Buffered Channels:** Events are published to a buffered channel to prevent blocking the main execution thread.
+- **Worker Pool:** A pool of background workers dispatches events to registered subscribers.
+- **Event Types:** Includes `WorkflowStarted`, `TaskCompleted`, `TaskFailed`, `StageStarted`, `TaskTokenUsage`, etc.
+
+---
+
+## 9. Observability & API (`internal/api/` & `internal/observer/`)
+
+### 9.1 REST API
+Provides endpoints for workflow management, execution triggering, and system configuration.
+
+### 9.2 Real-time Synchronization (WebSockets)
+A WebSocket hub subscribes to the `EventBus` and broadcasts events to connected UI clients. This allows the Workflow Builder to show live status updates (e.g., a node turning green when a task completes) without polling.
+
+### 9.3 Observer Package
+- **Metrics:** Tracks token usage, latency, and success rates using Prometheus-compatible collectors.
+- **Audit Logging:** Records every significant action and state change into a structured log for compliance and debugging.
+
+---
+
+## 10. Frontend Architecture (`ui/`)
+
+The UI is a modern React application built with TypeScript and Vite.
+
+- **State Management:** Uses `Zustand` for lightweight, reactive state management of workflows and system configuration.
+- **Workflow Builder:** A drag-and-drop interface powered by `React Flow` for visualizing and designing DAGs.
+- **Real-time Updates:** Integrates with the backend WebSocket to provide a "live" execution dashboard.
+- **UI Components:** Built with a custom design system using `Vanilla CSS` for maximum performance and flexibility.
+
+---
+
+## 11. Directory Structure
 
 ```text
 ├── cmd/
-│   ├── orch/          # CLI tool for YAML execution
-│   └── server/        # Main API & UI server
+│   ├── orch/          # CLI tool for executing YAML workflows
+│   └── server/        # Main API server and UI host
 ├── internal/
-│   ├── core/          # Domain Logic: Workflow, Task, Artifact, Retry
+│   ├── agents/        # Agent definitions, registries, and executors
+│   ├── api/           # REST handlers and WebSocket Hub
+│   ├── core/          # Domain Logic: Workflow, Task, Artifact, Tools, Memory
 │   ├── dag/           # Planning: Cycle detection, Topological sort
-│   ├── executor/      # Execution: Concurrency, Middleware, Routing, Checkpoints
-│   ├── agents/        # Intelligence: Prompt engineering, Context injection, Stitching
-│   ├── providers/     # LLM Adapters: Groq, OpenAI, Gemini, Anthropic
-│   ├── store/         # Persistence: Postgres/Memory implementations
-│   ├── events/        # Communication: Pub/Sub Event Bus
-│   ├── api/           # Interface: REST handlers and WebSocket Hub
-│   └── observer/      # Insights: Logging, Metrics, Tracing
+│   ├── dsl/           # Domain Specific Language for YAML parsing
+│   ├── events/        # Async Event Bus (Pub/Sub)
+│   ├── executor/      # Execution Engine: Concurrency, Middleware, Checkpointing
+│   ├── providers/     # LLM Adapters: OpenAI, Groq, Gemini, Anthropic
+│   ├── store/         # Persistence: Postgres and Memory implementations
+│   └── observer/      # Observability: Metrics, Auditing, Logging
 └── ui/
-    ├── src/components # UI Primitives (TaskNodes, Layouts)
-    ├── src/pages      # Workflow Builder and Dashboard logic
-    └── src/store      # State management (Zustand)
+    ├── src/components # Reusable UI primitives and Task nodes
+    ├── src/pages      # Main views: Builder, Dashboard, Executions
+    └── src/store      # Zustand state stores
 ```

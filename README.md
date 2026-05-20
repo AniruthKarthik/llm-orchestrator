@@ -4,81 +4,100 @@ LLM Orchestrator is a production-grade, local-first execution engine designed to
 
 It prioritizes reliability, modularity, and intelligence, handling complex task dependencies, multi-agent coordination, and resilient state persistence.
 
+---
+
 ## Key Features
 
-- **Dynamic DAG Execution:** Automatically manages task dependencies and parallel execution stages.
+- **Dynamic DAG Execution:** Automatically manages task dependencies and parallel execution stages using topological sorting.
 - **Multi-Agent Coordination:** Role-based routing with capability-aware and cost-aware logic.
-- **Context Management:** 
+- **Advanced Context Management:** 
     - **JSON Artifact Injection:** Automatically passes data between tasks in clean JSON format.
     - **Template Interpolation:** Reference previous task outputs using `{{TaskName.field}}`.
-    - **Context Stitching:** Intelligently manages context window limits.
-- **Human-in-the-Loop:** Pause execution for manual approval or intervention.
-- **Resiliency:** Automatic retries, panic recovery, and checkpointing.
-- **Observability:** Real-time event stream via WebSockets, token usage tracking, and structured audit logging.
-- **Local-First:** Optimized for local development with optional PostgreSQL persistence.
+    - **Context Stitching:** Intelligently manages context window limits with token-aware truncation.
+- **Human-in-the-Loop:** Pause execution for manual approval or intervention via REST/UI.
+- **Resiliency:** Automatic retries, panic recovery, and stage-level checkpointing.
+- **Real-time Observability:** Event-driven architecture with WebSockets for live UI updates and token usage tracking.
+- **Pluggable Providers:** Native support for Groq, OpenAI, Anthropic, and Google Gemini.
+- **Persistence:** Repository pattern with support for in-memory and PostgreSQL storage.
 
-## Installation
+---
+
+## Architecture at a Glance
+
+The system is composed of several decoupled layers:
+
+1.  **Core Domain:** Defines the `Workflow`, `Task`, and `Artifact` primitives.
+2.  **DAG Engine:** Validates graphs and computes the optimal topological execution order.
+3.  **Executor:** Manages the lifecycle of workflow runs, handling concurrency, retries, and middleware.
+4.  **Agent Layer:** Handles prompt engineering, context injection, and agent-specific execution logic.
+5.  **Provider Layer:** Unified interface for interacting with various LLM APIs.
+6.  **Persistence Layer:** Abstracts state management across different storage engines.
+7.  **API & UI:** Provides a RESTful interface and a reactive React-based workflow builder.
+
+For a deep dive, see the [Architecture Documentation](architecture.md).
+
+---
+
+## Getting Started
 
 ### Prerequisites
-- **Go:** 1.22 or higher.
-- **Node.js & npm:** For building the UI.
-- **Docker:** (Optional) For containerized deployment.
-- **API Keys:** At least one provider key (Groq, OpenAI, Anthropic, or Gemini).
+- **Go:** 1.22+
+- **Node.js & npm:** For the frontend UI.
+- **PostgreSQL:** (Optional) For persistent storage.
+- **API Keys:** At least one key from Groq, OpenAI, Anthropic, or Gemini.
 
-### Setup
-1.  **Clone the repository:**
+### Installation
+
+1.  **Clone and Enter:**
     ```bash
     git clone https://github.com/AniruthKarthik/llm-orchestrator.git
     cd llm-orchestrator
     ```
 
-2.  **Configure Environment Variables:**
+2.  **Configuration:**
     ```bash
     cp .env.example .env
-    # Edit .env and add your API keys
+    # Edit .env and add your provider API keys
     ```
 
 3.  **Build and Run:**
     ```bash
-    make build  # Builds the UI and the Go binary
+    make build  # Builds UI and Go binaries
     make run    # Starts the server at http://localhost:8080
     ```
+
+---
 
 ## Usage
 
 ### Workflow Builder (UI)
-The most intuitive way to use LLM Orchestrator is through the built-in Workflow Builder. It allows you to:
-- Drag and drop tasks.
-- Connect tasks to define dependencies.
-- Configure agents, models, and prompts.
-- Execute workflows and monitor real-time logs.
+The primary interface for designing and monitoring workflows.
+- **Visual Design:** Drag and drop tasks and connect them to define dependencies.
+- **Live Monitoring:** Watch execution progress in real-time with node status changes.
+- **Agent Config:** Define agent roles, system prompts, and model assignments.
 
 ### CLI Tool (`orch`)
-For quick local execution of YAML-defined workflows:
+For automated or headless execution of YAML-defined workflows:
 ```bash
-go run ./cmd/orch workflow.yaml
+./bin/orch examples/research_workflow.yaml
 ```
 
-### API Server
-The backend exposes a REST API for programmatic control.
-- `POST /api/v1/workflows`: Create/Update workflows.
-- `POST /api/v1/workflows/{id}/execute`: Trigger execution.
-- `GET /api/v1/metrics`: View system performance and token usage.
+### API
+The backend exposes a full REST API for programmatic integration:
+- `POST /api/v1/workflows`: Create or update workflow definitions.
+- `POST /api/v1/workflows/{id}/execute`: Trigger a workflow run.
+- `GET /api/v1/executions`: List recent workflow executions and their status.
 
-## Documentation
-- [Architecture Overview](architecture.md): Deep dive into the system design.
-- [Environment Variables](#environment-variables): Configuration details.
+---
 
-## Environment Variables
+## Testing
 
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | Postgres connection string (leave empty for in-memory). |
-| `API_KEY` | Optional security key for the API. |
-| `GROQ_API_KEY` | Your Groq API key. |
-| `OPENAI_API_KEY` | Your OpenAI API key. |
-| `ANTHROPIC_API_KEY` | Your Anthropic API key. |
-| `GEMINI_API_KEY` | Your Google Gemini API key. |
+The project maintains a high test coverage across core packages:
+```bash
+go test ./internal/... -v
+```
+
+---
 
 ## License
-MIT
+This project is licensed under the MIT License - see the LICENSE file for details.
