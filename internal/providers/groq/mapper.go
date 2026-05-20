@@ -35,5 +35,11 @@ func mapGenerateResponse(
 
 	return &providers.GenerateResponse{
 		Content: resp.Choices[0].Message.Content,
+		Model:   resp.Model,
+		Usage: providers.TokenUsage{
+			PromptTokens:     resp.Usage.PromptTokens,
+			CompletionTokens: resp.Usage.CompletionTokens,
+			TotalTokens:      resp.Usage.TotalTokens,
+		},
 	}
 }
