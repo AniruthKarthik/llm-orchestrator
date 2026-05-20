@@ -742,11 +742,6 @@ func (s *Server) handleDeleteWorkflow(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleExecuteWorkflow(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
-	var execReq struct {
-		DryRun bool `json:"dryRun"`
-	}
-	_ = json.NewDecoder(r.Body).Decode(&execReq)
-
 	record, err := s.store.GetWorkflow(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, "workflow not found")
@@ -772,12 +767,6 @@ func (s *Server) handleExecuteWorkflow(w http.ResponseWriter, r *http.Request) {
 		task.FinishedAt = nil
 		task.Output = nil
 		task.Error = ""
-		if execReq.DryRun {
-			if task.Input == nil {
-				task.Input = make(map[string]any)
-			}
-			task.Input["dry_run"] = true
-		}
 	}
 
 	if err := validateExecutableWorkflow(workflow, tasks); err != nil {

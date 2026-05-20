@@ -6,13 +6,14 @@ import (
 
 func mapGenerateRequest(req providers.GenerateRequest) geminiGenerateRequest {
 	contents := []geminiContent{}
-	var systemInstruction *geminiInstruction
+	var combinedSystemInstruction string
 
 	for _, m := range req.Messages {
 		if m.Role == "system" {
-			systemInstruction = &geminiInstruction{
-				Parts: []geminiPart{{Text: m.Content}},
+			if combinedSystemInstruction != "" {
+				combinedSystemInstruction += "\n\n"
 			}
+			combinedSystemInstruction += m.Content
 		} else {
 			role := m.Role
 			if role == "user" {
@@ -25,6 +26,13 @@ func mapGenerateRequest(req providers.GenerateRequest) geminiGenerateRequest {
 				Role:  role,
 				Parts: []geminiPart{{Text: m.Content}},
 			})
+		}
+	}
+
+	var systemInstruction *geminiInstruction
+	if combinedSystemInstruction != "" {
+		systemInstruction = &geminiInstruction{
+			Parts: []geminiPart{{Text: combinedSystemInstruction}},
 		}
 	}
 

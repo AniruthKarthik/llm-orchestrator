@@ -40,7 +40,7 @@ interface WorkflowState {
   fetchMetrics: () => Promise<void>;
   createWorkflow: (workflow: Record<string, unknown>) => Promise<Workflow | null>;
   deleteWorkflow: (id: string) => Promise<boolean>;
-  executeWorkflow: (id: string, options?: { dryRun?: boolean }) => Promise<boolean>;
+  executeWorkflow: (id: string) => Promise<boolean>;
 }
 
 const emptyResource = <T>(): ResourceState<T> => ({
@@ -159,10 +159,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     }
   },
 
-  executeWorkflow: async (id, options) => {
+  executeWorkflow: async (id) => {
     try {
-      await api.post(`/workflows/${id}/execute`, options || {});
-      toast.success(options?.dryRun ? 'Dry-run simulation started.' : 'Workflow execution started.');
+      await api.post(`/workflows/${id}/execute`, {});
+      toast.success('Workflow execution started.');
       // Refresh to get updated status
       setTimeout(() => get().fetchWorkflows(), 1000);
       return true;

@@ -64,7 +64,6 @@ export default function WorkflowBuilderPage() {
   const [executionPlan, setExecutionPlan] = useState<ExecutionPlan | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
   const [selectedTaskResult, setSelectedTaskResult] = useState<Record<string, unknown> | null>(null);
-  const [isDryRun, setIsDryRun] = useState(false);
 
   // Live execution log
   interface ExecLog { type: string; taskId?: string; msg: string; time: string }
@@ -385,9 +384,7 @@ export default function WorkflowBuilderPage() {
     setExecLogs([]);
     setShowExecPanel(true);
     
-    // In a real production app, the backend would handle the dryRun flag.
-    // We pass it here as a query param or part of the body.
-    const ok = await executeWorkflow(savedWorkflowId, { dryRun: isDryRun });
+    const ok = await executeWorkflow(savedWorkflowId);
     await loadExecutionPlan(savedWorkflowId);
     if (!ok) {
       setSaveError('Failed to start execution. Check that at least one LLM provider API key is set on the server.');
@@ -436,30 +433,14 @@ export default function WorkflowBuilderPage() {
           </button>
           <div className="w-px h-4 bg-border mx-1" />
           
-          <div className="flex items-center gap-2 mr-2">
-            <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-tight">Dry Run</label>
-            <button
-              onClick={() => setIsDryRun(!isDryRun)}
-              className={cn(
-                "w-7 h-4 rounded-full transition-colors relative",
-                isDryRun ? "bg-primary" : "bg-muted"
-              )}
-            >
-              <div className={cn(
-                "absolute top-0.5 left-0.5 w-3 h-3 bg-white rounded-full transition-transform",
-                isDryRun && "translate-x-3"
-              )} />
-            </button>
-          </div>
-
           <button
             onClick={handleExecute}
             disabled={isExecuting || !savedWorkflowId || id === 'new'}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
-            title={(!savedWorkflowId || id === 'new') ? 'Save the workflow first' : (isDryRun ? 'Dry run: execute without actual LLM calls' : 'Execute workflow')}
+            title={(!savedWorkflowId || id === 'new') ? 'Save the workflow first' : 'Execute workflow'}
           >
             {isExecuting ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
-            {isExecuting ? (isDryRun ? 'Simulating...' : 'Executing...') : (isDryRun ? 'Dry Run' : 'Execute')}
+            {isExecuting ? 'Executing...' : 'Execute'}
           </button>
         </div>
       </div>

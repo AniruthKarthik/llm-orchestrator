@@ -111,28 +111,48 @@ func (e *AgentExecutor) Execute(ctx context.Context, agentID string, task *core.
 		// Prepare messages
 		messages := []providers.Message{}
 		
+		var systemPrompt strings.Builder
+
 		// 1. System Prompt
 		if agent.SystemPrompt != "" {
-			messages = append(messages, providers.Message{Role: "system", Content: agent.SystemPrompt})
+			systemPrompt.WriteString(agent.SystemPrompt)
+			systemPrompt.WriteString("\n\n")
 		}
 
 		// 2. Retrieval Injection: Inject relevant artifacts
 		if e.artifactRegistry != nil {
 			artifacts := e.artifactRegistry.ListByWorkflow(task.WorkflowID)
 			if len(artifacts) > 0 {
-				stitcher := NewContextStitcher(4000) // Default limit for example
+				stitcher := NewContextStitcher(32000) // Increased limit to 32k chars (~8k tokens)
+
+				// Identify dependencies for highlighting
+				deps := make(map[string]bool)
+				for _, d := range task.Dependencies {
+					deps[d] = true
+				}
 
 				artifactStrings := make([]string, 0, len(artifacts))
 				for _, a := range artifacts {
 					dataJSON, _ := json.MarshalIndent(a.Data, "  ", "  ")
-					artifactStrings = append(artifactStrings, fmt.Sprintf("- Artifact: %s (Type: %s, From Task: %s)\n  Data: %s", a.Name, a.Type, a.TaskID, string(dataJSON)))
+					
+					isDep := ""
+					if deps[a.TaskID] {
+						isDep = " [DIRECT DEPENDENCY]"
+					}
+
+					artifactStrings = append(artifactStrings, fmt.Sprintf("- Artifact: %s%s (Type: %s, From Task: %s)\n  Data: %s", a.Name, isDep, a.Type, a.TaskID, string(dataJSON)))
 				}
 
 				contextMsg := "The following artifacts are available from previous tasks in this workflow. You can reference them by their name or the data provided below:\n"
 				contextMsg += stitcher.StitchArtifacts(artifactStrings)
 
-				messages = append(messages, providers.Message{Role: "system", Content: contextMsg})
+				systemPrompt.WriteString("## Context from previous tasks\n")
+				systemPrompt.WriteString(contextMsg)
 			}
+		}
+
+		if systemPrompt.Len() > 0 {
+			messages = append(messages, providers.Message{Role: "system", Content: systemPrompt.String()})
 		}
 
 		// Prepare user prompt with interpolation
@@ -174,17 +194,6 @@ func (e *AgentExecutor) Execute(ctx context.Context, agentID string, task *core.
 		}
 
 		messages = append(messages, providers.Message{Role: "user", Content: userPrompt})
-
-		// 4. Dry Run Check: If the task or workflow has a dry_run flag, return a mock response
-		if dr, ok := task.Input["dry_run"].(bool); ok && dr {
-			return map[string]any{
-				"status":  "simulated",
-				"agent":   agent.Name,
-				"role":    string(agent.Role),
-				"output":  fmt.Sprintf("This is a simulated response for task: %s", task.Name),
-				"content": fmt.Sprintf("SIMULATED CONTENT for objective: %s", task.Description),
-			}, nil
-		}
 
 		req := providers.GenerateRequest{
 			Model:    agent.Model,

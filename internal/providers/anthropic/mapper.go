@@ -10,7 +10,10 @@ func mapGenerateRequest(req providers.GenerateRequest) anthropicGenerateRequest 
 
 	for _, m := range req.Messages {
 		if m.Role == "system" {
-			system = m.Content
+			if system != "" {
+				system += "\n\n"
+			}
+			system += m.Content
 		} else {
 			msgs = append(msgs, anthropicMessage{
 				Role:    m.Role,
