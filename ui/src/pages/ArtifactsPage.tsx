@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Database, FileText, Code, Clock, Search, X, Loader2 } from 'lucide-react';
+import { Database, FileText, Code, Clock, Search, X, Loader2, Copy, Check } from 'lucide-react';
 import { useWorkflowStore } from '@/store/useWorkflowStore';
 import type { Artifact } from '@/types';
 
 function ArtifactPreviewModal({ artifact, onClose }: { artifact: Artifact; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+
   // Intelligently extract actual text response if data is an object or stringified JSON
   let displayContent = artifact.data;
   let isExtracted = false;
@@ -35,6 +37,20 @@ function ArtifactPreviewModal({ artifact, onClose }: { artifact: Artifact; onClo
   const renderAsJson = !isExtracted && (artifact.type === 'JSON' || typeof displayContent !== 'string');
   const renderAsCode = !isExtracted && artifact.type === 'CODE';
 
+  const textToCopy = typeof displayContent === 'string'
+    ? displayContent
+    : JSON.stringify(displayContent, null, 2);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div
@@ -48,12 +64,23 @@ function ArtifactPreviewModal({ artifact, onClose }: { artifact: Artifact; onClo
               Workflow: {artifact.workflowId} · Task: {artifact.taskId}
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"
-          >
-            <X size={18} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleCopy}
+              className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground flex items-center gap-1.5 text-xs transition-colors"
+              title="Copy output to clipboard"
+            >
+              {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+              <span>{copied ? 'Copied' : 'Copy'}</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded hover:bg-secondary text-muted-foreground hover:text-foreground"
+              title="Close modal"
+            >
+              <X size={18} />
+            </button>
+          </div>
         </div>
         <div className="flex-1 overflow-auto bg-muted/5 p-6">
           <div className="max-w-3xl mx-auto">
