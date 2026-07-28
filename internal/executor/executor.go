@@ -443,19 +443,32 @@ func (e *Executor) executeTask(
 		})
 
 		// Wait for approval via store update (e.g., from API)
+		// Using a ticker so ctx.Done() is checked immediately on every
+		// iteration rather than only after a blocking time.Sleep
+		pollInterval := 1 * time.Second
+		ticker := time.NewTicker(pollInterval)
+		defer ticker.Stop()
+
+	approvalLoop:
 		for {
-			time.Sleep(1 * time.Second)
-			rec, _ := e.store.GetTask(workflow.ID, task.ID)
-			if rec.Status == string(core.TaskRunning) {
-				// Approved externally
-				_ = task.Approve() // Update local state
-				break
-			}
-			// Check for timeout or cancellation
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			default:
+			case <-ticker.C:
+				rec, err := e.store.GetTask(workflow.ID, task.ID)
+				if err != nil {
+					slog.Warn("approval poll: failed to get task",
+						"task_id", task.ID,
+						"workflow_id", workflow.ID,
+						"error", err,
+					)
+					continue
+				}
+				if rec.Status == string(core.TaskRunning) {
+					// Approved externally so update local state
+					_ = task.Approve()
+					break approvalLoop
+				}
 			}
 		}
 	}
