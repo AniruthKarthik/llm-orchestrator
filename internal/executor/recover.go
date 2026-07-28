@@ -97,16 +97,14 @@ func (s *Supervisor) checkStuckTasks() error {
 
 			if taskRecord.Timeout > 0 && taskRecord.StartedAt != nil {
 				if time.Since(*taskRecord.StartedAt) > taskRecord.Timeout+(5*time.Second) { // 5s grace period
-					log.Printf("Task %s in workflow %s is stuck (timed out), marking as failed", taskRecord.ID, wfRecord.ID)
+					log.Printf("Task %s in workflow %s is stuck (timed out), cancelling workflow", taskRecord.ID, wfRecord.ID)
 
-					taskRecord.Status = string(core.TaskFailed)
-					taskRecord.Error = "task stuck: timeout exceeded"
-					now := time.Now()
-					taskRecord.FinishedAt = &now
-
-					if err := s.store.UpdateTask(taskRecord); err != nil {
-						log.Printf("Failed to update stuck task %s: %v", taskRecord.ID, err)
-					}
+					// Cancel the workflow context rather than writing FAILED directly
+					// to the store. The executor goroutine will detect the cancellation
+					// via ctx.Done() and fail the task through the normal error path,
+					// which guarantees a single writer for terminal-status transitions.
+					s.executor.CancelWorkflow(wfRecord.ID)
+					break // one stuck task is enough to cancel the entire workflow
 				}
 			}
 		}

@@ -32,6 +32,9 @@ type Executor struct {
 
 	concurrencyLimiter *ConcurrencyLimiter
 	mu                 sync.RWMutex
+
+	// workflowCancels tracks cancel functions for all in flight workflows.
+	workflowCancels map[string]context.CancelFunc
 }
 
 func NewExecutor(
@@ -58,6 +61,7 @@ func NewExecutor(
 		taskMiddlewares:     make([]TaskMiddleware, 0),
 		workflowMiddlewares: make([]WorkflowMiddleware, 0),
 		concurrencyLimiter:  NewConcurrencyLimiter(100), // Default limit
+		workflowCancels:     make(map[string]context.CancelFunc),
 	}
 }
 
@@ -86,6 +90,16 @@ func (e *Executor) WithPluginRegistry(r plugin.Registry) *Executor {
 func (e *Executor) WithRouter(r Router) *Executor {
 	e.router = r
 	return e
+}
+
+// CancelWorkflow cancels the context of an in flight workflow.
+func (e *Executor) CancelWorkflow(workflowID string) {
+	e.mu.RLock()
+	cancel, ok := e.workflowCancels[workflowID]
+	e.mu.RUnlock()
+	if ok {
+		cancel()
+	}
 }
 
 func (e *Executor) GetAgentRegistry() *agents.AgentRegistry {
@@ -121,6 +135,16 @@ func (e *Executor) execute(
 		workflowCtx, workflowCancel = context.WithCancel(context.Background())
 	}
 	defer workflowCancel()
+
+	// Register the cancel func so the Supervisor can abort this workflow.
+	e.mu.Lock()
+	e.workflowCancels[workflow.ID] = workflowCancel
+	e.mu.Unlock()
+	defer func() {
+		e.mu.Lock()
+		delete(e.workflowCancels, workflow.ID)
+		e.mu.Unlock()
+	}()
 
 	if err := e.store.SaveWorkflow(
 		store.WorkflowToRecord(workflow),
