@@ -351,10 +351,11 @@ func (e *Executor) executeTask(
 	// This gives the downstream agent structured access to upstream results
 	// under the key "dep_outputs" (a map of taskID -> output) as well as
 	// individual keys "dep_<taskID>_<field>" for flat access.
+	//
+	// SetInput acquires the task lock so this is safe when other
+	// components (e.g. the Supervisor or the API layer) read the task's
+	// input map concurrently.
 	if len(task.Dependencies) > 0 {
-		if task.Input == nil {
-			task.Input = make(map[string]any)
-		}
 		depOutputs := make(map[string]any, len(task.Dependencies))
 		for _, depID := range task.Dependencies {
 			depTask, err := workflow.GetTask(depID)
@@ -370,7 +371,7 @@ func (e *Executor) executeTask(
 			depOutputs[depTask.Name] = depOut
 		}
 		if len(depOutputs) > 0 {
-			task.Input["dep_outputs"] = depOutputs
+			task.SetInput("dep_outputs", depOutputs)
 		}
 	}
 
