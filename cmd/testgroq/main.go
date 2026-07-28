@@ -100,7 +100,7 @@ func main() {
 	exec := executor.NewExecutor(registry, agentRegistry, artifactRegistry, memoryRegistry, toolRegistry, toolPolicy, eventBus, memoryStore)
 	
 	fmt.Println("Starting workflow execution...")
-	err := exec.Execute(workflow)
+	err := exec.Execute(context.Background(), workflow)
 	if err != nil {
 		fmt.Printf("Workflow execution failed: %v\n", err)
 		os.Exit(1)

@@ -9,13 +9,13 @@ import (
 type ExecutionContext struct {
 	WorkflowID string
 
-	SharedMemory map[string]any
+	sharedMemory map[string]any
 	Artifacts    *core.ArtifactRegistry
 	Memories     *core.MemoryRegistry
 	Tools        *core.ToolRegistry
 	ToolPolicy   *core.ToolPolicy
 
-	Mutex sync.RWMutex
+	mu sync.RWMutex
 }
 
 func NewExecutionContext(
@@ -25,35 +25,32 @@ func NewExecutionContext(
 	tools *core.ToolRegistry,
 	toolPolicy *core.ToolPolicy,
 ) *ExecutionContext {
-	newExecContext := &ExecutionContext{
+	return &ExecutionContext{
 		WorkflowID:   workflowID,
-		SharedMemory: make(map[string]any),
+		sharedMemory: make(map[string]any),
 		Artifacts:    artifacts,
 		Memories:     memories,
 		Tools:        tools,
 		ToolPolicy:   toolPolicy,
 	}
-
-	return newExecContext
 }
 
 func (c *ExecutionContext) Set(
 	key string,
 	value any,
 ) {
-
-	c.Mutex.Lock()
-	defer c.Mutex.Unlock()
-	c.SharedMemory[key] = value
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.sharedMemory[key] = value
 }
 
 func (c *ExecutionContext) Get(
 	key string,
 ) (any, bool) {
-	c.Mutex.RLock()
-	defer c.Mutex.RUnlock()
+	c.mu.RLock()
+	defer c.mu.RUnlock()
 
-	val, exists := c.SharedMemory[key]
+	val, exists := c.sharedMemory[key]
 
 	return val, exists
 }

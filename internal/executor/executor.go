@@ -111,28 +111,33 @@ func (e *Executor) GetArtifactRegistry() *core.ArtifactRegistry {
 }
 
 func (e *Executor) Execute(
+	ctx context.Context,
 	workflow *core.Workflow,
 ) error {
 	e.mu.RLock()
 	middlewares := e.workflowMiddlewares
 	e.mu.RUnlock()
 	handler := ApplyWorkflowMiddleware(e.execute, middlewares...)
-	return handler(workflow)
+	return handler(ctx, workflow)
 }
 
 func (e *Executor) execute(
+	ctx context.Context,
 	workflow *core.Workflow,
 ) error {
-	// Use a workflow-level context that we can cancel if any task fails critically
+	// Build a workflow-level context that is cancelled when:
+	//   - the caller cancels (e.g. server shutdown)
+	//   - the workflow timeout expires
+	//   - the Supervisor calls CancelWorkflow()
 	var (
 		workflowCtx    context.Context
 		workflowCancel context.CancelFunc
 	)
 
 	if workflow.Timeout > 0 {
-		workflowCtx, workflowCancel = context.WithTimeout(context.Background(), workflow.Timeout)
+		workflowCtx, workflowCancel = context.WithTimeout(ctx, workflow.Timeout)
 	} else {
-		workflowCtx, workflowCancel = context.WithCancel(context.Background())
+		workflowCtx, workflowCancel = context.WithCancel(ctx)
 	}
 	defer workflowCancel()
 
@@ -336,6 +341,7 @@ func (e *Executor) execute(
 }
 
 func (e *Executor) Resume(
+	ctx context.Context,
 	workflowID string,
 ) error {
 	record, err := e.store.GetWorkflow(workflowID)
@@ -357,7 +363,7 @@ func (e *Executor) Resume(
 		}
 	}
 
-	return e.Execute(workflow)
+	return e.Execute(ctx, workflow)
 }
 
 func (e *Executor) executeTask(
