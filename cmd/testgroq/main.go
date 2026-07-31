@@ -70,7 +70,10 @@ func main() {
 	// 2. Register worker
 	groqProvider := groq.NewGroqProvider(apiKey)
 	llmWorker := &LLMWorker{provider: groqProvider}
-	registry.Register("llm", llmWorker)
+	if err := registry.Register("llm", llmWorker); err != nil {
+		fmt.Printf("Failed to register worker: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Subscribe to events for logging
 	eventBus.Subscribe(events.TaskStarted, func(e events.Event) {

@@ -65,7 +65,10 @@ func NewExecutor(
 	}
 }
 
+// WithConcurrencyLimit sets the global concurrency limit for task execution.
 func (e *Executor) WithConcurrencyLimit(limit int) *Executor {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.concurrencyLimiter = NewConcurrencyLimiter(limit)
 	return e
 }
@@ -82,12 +85,18 @@ func (e *Executor) UseWorkflowMiddleware(m ...WorkflowMiddleware) {
 	e.workflowMiddlewares = append(e.workflowMiddlewares, m...)
 }
 
+// WithPluginRegistry swaps the plugin registry used for execution interceptors.
 func (e *Executor) WithPluginRegistry(r plugin.Registry) *Executor {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.pluginRegistry = r
 	return e
 }
 
+// WithRouter swaps the agent routing strategy.
 func (e *Executor) WithRouter(r Router) *Executor {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.router = r
 	return e
 }
@@ -372,10 +381,20 @@ func (e *Executor) executeTask(
 	workflow *core.Workflow,
 	task *core.Task,
 ) error {
-	if err := e.concurrencyLimiter.Acquire(ctx); err != nil {
+	// Snapshot all mutable configuration under one read lock so concurrent
+	// reconfiguration (WithConcurrencyLimit/WithRouter/WithPluginRegistry/
+	// UseTaskMiddleware) cannot race with this execution.
+	e.mu.RLock()
+	limiter := e.concurrencyLimiter
+	router := e.router
+	pluginRegistry := e.pluginRegistry
+	middlewares := e.taskMiddlewares
+	e.mu.RUnlock()
+
+	if err := limiter.Acquire(ctx); err != nil {
 		return err
 	}
-	defer e.concurrencyLimiter.Release()
+	defer limiter.Release()
 
 	// Inject outputs from all dependency tasks into this task's Input.
 	// This gives the downstream agent structured access to upstream results
@@ -413,7 +432,7 @@ func (e *Executor) executeTask(
 	} else {
 		// Use router to select agent
 		var err error
-		agentIDs, err = e.router.Route(ctx, task, e.agentRegistry.List())
+		agentIDs, err = router.Route(ctx, task, e.agentRegistry.List())
 		if err != nil {
 			return fmt.Errorf("failed to route task: %w", err)
 		}
@@ -512,7 +531,7 @@ func (e *Executor) executeTask(
 	})
 
 	// Execution Interceptors (Before)
-	for _, p := range e.pluginRegistry.List(plugin.PluginTypeObserver) {
+	for _, p := range pluginRegistry.List(plugin.PluginTypeObserver) {
 		if interceptor, ok := p.(plugin.ExecutionInterceptor); ok {
 			if err := interceptor.BeforeTask(ctx, task); err != nil {
 				return err
@@ -520,15 +539,11 @@ func (e *Executor) executeTask(
 		}
 	}
 
-	e.mu.RLock()
-	middlewares := e.taskMiddlewares
-	e.mu.RUnlock()
-
 	finalHandler := ApplyTaskMiddleware(handler, middlewares...)
 	output, err := e.executeWithRetry(ctx, execCtx, workflow.ID, task, finalHandler)
 
 	// Execution Interceptors (After)
-	for _, p := range e.pluginRegistry.List(plugin.PluginTypeObserver) {
+	for _, p := range pluginRegistry.List(plugin.PluginTypeObserver) {
 		if interceptor, ok := p.(plugin.ExecutionInterceptor); ok {
 			_ = interceptor.AfterTask(ctx, task, output, err)
 		}
