@@ -35,6 +35,7 @@ type Executor struct {
 
 	// workflowCancels tracks cancel functions for all in flight workflows.
 	workflowCancels map[string]context.CancelFunc
+	wg              sync.WaitGroup
 }
 
 func NewExecutor(
@@ -123,6 +124,8 @@ func (e *Executor) Execute(
 	ctx context.Context,
 	workflow *core.Workflow,
 ) error {
+	e.wg.Add(1)
+	defer e.wg.Done()
 	e.mu.RLock()
 	middlewares := e.workflowMiddlewares
 	e.mu.RUnlock()
@@ -669,4 +672,18 @@ func (e *Executor) executeWithRetry(
 	}
 
 	return nil, lastErr
+}
+
+func (e *Executor) Wait(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		e.wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-done:
+		return nil
+	}
 }

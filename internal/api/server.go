@@ -105,8 +105,9 @@ func NewServer(e *executor.Executor, s store.Store, eb *events.EventBus, storage
 
 // Shutdown cancels the server's lifecycle context, which in turn
 // cancels all in- light workflow executions launched via the API.
-func (s *Server) Shutdown() {
+func (s *Server) Shutdown(ctx context.Context) error {
 	s.cancel()
+	return s.executor.Wait(ctx)
 }
 
 func (s *Server) Routes() http.Handler {
@@ -813,7 +814,7 @@ func (s *Server) handleExecuteWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	workflow := store.RecordToWorkflow(record, tasks)
-	
+
 	// Reset workflow state for re-execution
 	workflow.Status = core.WorkflowPending
 	workflow.StartedAt = nil

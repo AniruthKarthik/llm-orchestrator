@@ -139,14 +139,17 @@ func main() {
 
 	slog.Info("shutting down gracefully (30s timeout)...")
 
-	// Cancel in-flight workflow executions first.
-	srv.Shutdown()
-
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	// 1. Stop HTTP server first (stops accepting new incoming requests)
 	if err := httpServer.Shutdown(ctx); err != nil {
-		slog.Error("forced shutdown", "error", err)
+		slog.Error("http server shutdown error", "error", err)
+	}
+
+	// 2. Cancel running workflows and wait for goroutines to complete cleanup
+	if err := srv.Shutdown(ctx); err != nil {
+		slog.Warn("workflow executor shutdown timed out or completed with error", "error", err)
 	} else {
 		slog.Info("server stopped cleanly")
 	}
