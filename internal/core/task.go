@@ -249,6 +249,17 @@ func (t *Task) GetStatus() TaskStatus {
 	return t.Status
 }
 
+// SetInput sets a value in the task's input map in a thread safe manner.
+// The map is lazily initialised if nil
+func (t *Task) SetInput(key string, value any) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.Input == nil {
+		t.Input = make(map[string]any)
+	}
+	t.Input[key] = value
+}
+
 func (t *Task) GetOutput() map[string]any {
 	t.mu.RLock()
 	defer t.mu.RUnlock()

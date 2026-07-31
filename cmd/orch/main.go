@@ -158,7 +158,7 @@ func main() {
 	fmt.Printf("Executing Workflow: %s (%s)\n", workflow.Name, workflow.ID)
 	
 	// 6. Execute Workflow
-	if err := exec.Execute(workflow); err != nil {
+	if err := exec.Execute(context.Background(), workflow); err != nil {
 		fmt.Printf("Execution failed: %v\n", err)
 		os.Exit(1)
 	}

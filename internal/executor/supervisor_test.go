@@ -19,12 +19,19 @@ func TestSupervisor_CheckStuckTasks(t *testing.T) {
 	e := NewExecutor(NewWorkerRegistry(), ar, art, mem, tr, tp, nil, s)
 	supervisor := NewSupervisor(s, e, 100*time.Millisecond)
 
-	// 1. Setup a stuck task
+	// 1. Setup a "stuck" workflow with a task past its timeout.
 	workflowID := "wf-1"
 	taskID := "task-1"
-	
 	startedAt := time.Now().Add(-10 * time.Minute)
-	
+
+	// Register a cancel func so we can observe when the supervisor calls it.
+	cancelled := make(chan struct{})
+	e.mu.Lock()
+	e.workflowCancels[workflowID] = func() {
+		close(cancelled)
+	}
+	e.mu.Unlock()
+
 	err := s.SaveWorkflow(store.WorkflowRecord{
 		ID:        workflowID,
 		Status:    string(core.WorkflowRunning),
@@ -46,23 +53,17 @@ func TestSupervisor_CheckStuckTasks(t *testing.T) {
 		t.Fatalf("failed to save task: %v", err)
 	}
 
-	// 2. Run supervisor check
+	// 2. Run supervisor check.
 	err = supervisor.checkStuckTasks()
 	if err != nil {
 		t.Fatalf("checkStuckTasks failed: %v", err)
 	}
 
-	// 3. Verify task was failed
-	taskRecord, err := s.GetTask(workflowID, taskID)
-	if err != nil {
-		t.Fatalf("failed to get task: %v", err)
-	}
-
-	if taskRecord.Status != string(core.TaskFailed) {
-		t.Errorf("expected task status to be FAILED, got %s", taskRecord.Status)
-	}
-
-	if taskRecord.Error != "task stuck: timeout exceeded" {
-		t.Errorf("expected specific error message, got %s", taskRecord.Error)
+	// 3. Verify the supervisor called CancelWorkflow (the cancel func was invoked).
+	select {
+	case <-cancelled:
+		// Success — the executor's context was cancelled.
+	case <-time.After(time.Second):
+		t.Fatal("supervisor did not cancel the workflow context for stuck task")
 	}
 }

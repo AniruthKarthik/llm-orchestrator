@@ -2,6 +2,7 @@ package api
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -45,6 +46,9 @@ type Server struct {
 	apiKey        string // optional — empty means no auth
 	storageMode   string // "memory" or "postgres"
 
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	tokenMu    sync.RWMutex
 	tokenStats map[string]*tokenModelStats // keyed by model name
 }
@@ -54,6 +58,7 @@ func NewServer(e *executor.Executor, s store.Store, eb *events.EventBus, storage
 	if origin == "" {
 		origin = "*"
 	}
+	ctx, cancel := context.WithCancel(context.Background())
 	srv := &Server{
 		executor:      e,
 		store:         s,
@@ -61,6 +66,8 @@ func NewServer(e *executor.Executor, s store.Store, eb *events.EventBus, storage
 		allowedOrigin: origin,
 		apiKey:        os.Getenv("API_KEY"),
 		storageMode:   storageMode,
+		ctx:           ctx,
+		cancel:        cancel,
 		tokenStats:    make(map[string]*tokenModelStats),
 	}
 
@@ -94,6 +101,12 @@ func NewServer(e *executor.Executor, s store.Store, eb *events.EventBus, storage
 	})
 
 	return srv
+}
+
+// Shutdown cancels the server's lifecycle context, which in turn
+// cancels all in- light workflow executions launched via the API.
+func (s *Server) Shutdown() {
+	s.cancel()
 }
 
 func (s *Server) Routes() http.Handler {
@@ -834,7 +847,7 @@ func (s *Server) handleExecuteWorkflow(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		if err := s.executor.Execute(workflow); err != nil {
+		if err := s.executor.Execute(s.ctx, workflow); err != nil {
 			slog.Error("workflow execution error", "workflow_id", id, "error", err)
 			if rec, getErr := s.store.GetWorkflow(id); getErr == nil && rec.Status != string(core.WorkflowFailed) {
 				rec.Status = string(core.WorkflowFailed)

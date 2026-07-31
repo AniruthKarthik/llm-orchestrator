@@ -138,6 +138,10 @@ func main() {
 	}
 
 	slog.Info("shutting down gracefully (30s timeout)...")
+
+	// Cancel in-flight workflow executions first.
+	srv.Shutdown()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 

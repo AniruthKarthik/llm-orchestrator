@@ -13,7 +13,7 @@ type TaskHandler func(ctx context.Context, execCtx *ExecutionContext, task *core
 type TaskMiddleware func(next TaskHandler) TaskHandler
 
 // WorkflowHandler defines the function signature for workflow execution.
-type WorkflowHandler func(workflow *core.Workflow) error
+type WorkflowHandler func(ctx context.Context, workflow *core.Workflow) error
 
 // WorkflowMiddleware is a function that wraps a WorkflowHandler.
 type WorkflowMiddleware func(next WorkflowHandler) WorkflowHandler

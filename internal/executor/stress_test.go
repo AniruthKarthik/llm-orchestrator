@@ -53,7 +53,7 @@ func TestConcurrencyStress(t *testing.T) {
 				workflow.AddTask(task)
 			}
 
-			if err := exec.Execute(workflow); err != nil {
+			if err := exec.Execute(context.Background(), workflow); err != nil {
 				errChan <- fmt.Errorf("workflow %d failed: %w", id, err)
 			}
 		}(i)

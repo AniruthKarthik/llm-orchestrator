@@ -32,6 +32,9 @@ type Executor struct {
 
 	concurrencyLimiter *ConcurrencyLimiter
 	mu                 sync.RWMutex
+
+	// workflowCancels tracks cancel functions for all in flight workflows.
+	workflowCancels map[string]context.CancelFunc
 }
 
 func NewExecutor(
@@ -58,10 +61,14 @@ func NewExecutor(
 		taskMiddlewares:     make([]TaskMiddleware, 0),
 		workflowMiddlewares: make([]WorkflowMiddleware, 0),
 		concurrencyLimiter:  NewConcurrencyLimiter(100), // Default limit
+		workflowCancels:     make(map[string]context.CancelFunc),
 	}
 }
 
+// WithConcurrencyLimit sets the global concurrency limit for task execution.
 func (e *Executor) WithConcurrencyLimit(limit int) *Executor {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.concurrencyLimiter = NewConcurrencyLimiter(limit)
 	return e
 }
@@ -78,14 +85,30 @@ func (e *Executor) UseWorkflowMiddleware(m ...WorkflowMiddleware) {
 	e.workflowMiddlewares = append(e.workflowMiddlewares, m...)
 }
 
+// WithPluginRegistry swaps the plugin registry used for execution interceptors.
 func (e *Executor) WithPluginRegistry(r plugin.Registry) *Executor {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.pluginRegistry = r
 	return e
 }
 
+// WithRouter swaps the agent routing strategy.
 func (e *Executor) WithRouter(r Router) *Executor {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.router = r
 	return e
+}
+
+// CancelWorkflow cancels the context of an in flight workflow.
+func (e *Executor) CancelWorkflow(workflowID string) {
+	e.mu.RLock()
+	cancel, ok := e.workflowCancels[workflowID]
+	e.mu.RUnlock()
+	if ok {
+		cancel()
+	}
 }
 
 func (e *Executor) GetAgentRegistry() *agents.AgentRegistry {
@@ -97,30 +120,45 @@ func (e *Executor) GetArtifactRegistry() *core.ArtifactRegistry {
 }
 
 func (e *Executor) Execute(
+	ctx context.Context,
 	workflow *core.Workflow,
 ) error {
 	e.mu.RLock()
 	middlewares := e.workflowMiddlewares
 	e.mu.RUnlock()
 	handler := ApplyWorkflowMiddleware(e.execute, middlewares...)
-	return handler(workflow)
+	return handler(ctx, workflow)
 }
 
 func (e *Executor) execute(
+	ctx context.Context,
 	workflow *core.Workflow,
 ) error {
-	// Use a workflow-level context that we can cancel if any task fails critically
+	// Build a workflow-level context that is cancelled when:
+	//   - the caller cancels (e.g. server shutdown)
+	//   - the workflow timeout expires
+	//   - the Supervisor calls CancelWorkflow()
 	var (
 		workflowCtx    context.Context
 		workflowCancel context.CancelFunc
 	)
 
 	if workflow.Timeout > 0 {
-		workflowCtx, workflowCancel = context.WithTimeout(context.Background(), workflow.Timeout)
+		workflowCtx, workflowCancel = context.WithTimeout(ctx, workflow.Timeout)
 	} else {
-		workflowCtx, workflowCancel = context.WithCancel(context.Background())
+		workflowCtx, workflowCancel = context.WithCancel(ctx)
 	}
 	defer workflowCancel()
+
+	// Register the cancel func so the Supervisor can abort this workflow.
+	e.mu.Lock()
+	e.workflowCancels[workflow.ID] = workflowCancel
+	e.mu.Unlock()
+	defer func() {
+		e.mu.Lock()
+		delete(e.workflowCancels, workflow.ID)
+		e.mu.Unlock()
+	}()
 
 	if err := e.store.SaveWorkflow(
 		store.WorkflowToRecord(workflow),
@@ -312,6 +350,7 @@ func (e *Executor) execute(
 }
 
 func (e *Executor) Resume(
+	ctx context.Context,
 	workflowID string,
 ) error {
 	record, err := e.store.GetWorkflow(workflowID)
@@ -333,7 +372,7 @@ func (e *Executor) Resume(
 		}
 	}
 
-	return e.Execute(workflow)
+	return e.Execute(ctx, workflow)
 }
 
 func (e *Executor) executeTask(
@@ -342,19 +381,30 @@ func (e *Executor) executeTask(
 	workflow *core.Workflow,
 	task *core.Task,
 ) error {
-	if err := e.concurrencyLimiter.Acquire(ctx); err != nil {
+	// Snapshot all mutable configuration under one read lock so concurrent
+	// reconfiguration (WithConcurrencyLimit/WithRouter/WithPluginRegistry/
+	// UseTaskMiddleware) cannot race with this execution.
+	e.mu.RLock()
+	limiter := e.concurrencyLimiter
+	router := e.router
+	pluginRegistry := e.pluginRegistry
+	middlewares := e.taskMiddlewares
+	e.mu.RUnlock()
+
+	if err := limiter.Acquire(ctx); err != nil {
 		return err
 	}
-	defer e.concurrencyLimiter.Release()
+	defer limiter.Release()
 
 	// Inject outputs from all dependency tasks into this task's Input.
 	// This gives the downstream agent structured access to upstream results
 	// under the key "dep_outputs" (a map of taskID -> output) as well as
 	// individual keys "dep_<taskID>_<field>" for flat access.
+	//
+	// SetInput acquires the task lock so this is safe when other
+	// components (e.g. the Supervisor or the API layer) read the task's
+	// input map concurrently.
 	if len(task.Dependencies) > 0 {
-		if task.Input == nil {
-			task.Input = make(map[string]any)
-		}
 		depOutputs := make(map[string]any, len(task.Dependencies))
 		for _, depID := range task.Dependencies {
 			depTask, err := workflow.GetTask(depID)
@@ -370,7 +420,7 @@ func (e *Executor) executeTask(
 			depOutputs[depTask.Name] = depOut
 		}
 		if len(depOutputs) > 0 {
-			task.Input["dep_outputs"] = depOutputs
+			task.SetInput("dep_outputs", depOutputs)
 		}
 	}
 
@@ -382,7 +432,7 @@ func (e *Executor) executeTask(
 	} else {
 		// Use router to select agent
 		var err error
-		agentIDs, err = e.router.Route(ctx, task, e.agentRegistry.List())
+		agentIDs, err = router.Route(ctx, task, e.agentRegistry.List())
 		if err != nil {
 			return fmt.Errorf("failed to route task: %w", err)
 		}
@@ -443,19 +493,32 @@ func (e *Executor) executeTask(
 		})
 
 		// Wait for approval via store update (e.g., from API)
+		// Using a ticker so ctx.Done() is checked immediately on every
+		// iteration rather than only after a blocking time.Sleep
+		pollInterval := 1 * time.Second
+		ticker := time.NewTicker(pollInterval)
+		defer ticker.Stop()
+
+	approvalLoop:
 		for {
-			time.Sleep(1 * time.Second)
-			rec, _ := e.store.GetTask(workflow.ID, task.ID)
-			if rec.Status == string(core.TaskRunning) {
-				// Approved externally
-				_ = task.Approve() // Update local state
-				break
-			}
-			// Check for timeout or cancellation
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			default:
+			case <-ticker.C:
+				rec, err := e.store.GetTask(workflow.ID, task.ID)
+				if err != nil {
+					slog.Warn("approval poll: failed to get task",
+						"task_id", task.ID,
+						"workflow_id", workflow.ID,
+						"error", err,
+					)
+					continue
+				}
+				if rec.Status == string(core.TaskRunning) {
+					// Approved externally so update local state
+					_ = task.Approve()
+					break approvalLoop
+				}
 			}
 		}
 	}
@@ -468,7 +531,7 @@ func (e *Executor) executeTask(
 	})
 
 	// Execution Interceptors (Before)
-	for _, p := range e.pluginRegistry.List(plugin.PluginTypeObserver) {
+	for _, p := range pluginRegistry.List(plugin.PluginTypeObserver) {
 		if interceptor, ok := p.(plugin.ExecutionInterceptor); ok {
 			if err := interceptor.BeforeTask(ctx, task); err != nil {
 				return err
@@ -476,15 +539,11 @@ func (e *Executor) executeTask(
 		}
 	}
 
-	e.mu.RLock()
-	middlewares := e.taskMiddlewares
-	e.mu.RUnlock()
-
 	finalHandler := ApplyTaskMiddleware(handler, middlewares...)
 	output, err := e.executeWithRetry(ctx, execCtx, workflow.ID, task, finalHandler)
 
 	// Execution Interceptors (After)
-	for _, p := range e.pluginRegistry.List(plugin.PluginTypeObserver) {
+	for _, p := range pluginRegistry.List(plugin.PluginTypeObserver) {
 		if interceptor, ok := p.(plugin.ExecutionInterceptor); ok {
 			_ = interceptor.AfterTask(ctx, task, output, err)
 		}
